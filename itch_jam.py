@@ -27,14 +27,14 @@ class ItchJam:
 
     db_conn = None
 
-    id: str
-    name: str
-    owner_name: str
-    owner_id: str
-    start: datetime
-    duration: timedelta
+    id: str = None
+    name: str = None
+    owner_name: str = None
+    owner_id: str = None
+    start: datetime = None
+    duration: timedelta = None
     gametype: GameType = GameType.UNCLASSIFIED
-    description: str = ""
+    description: str = None
 
     tabletop_keywords = [
         "tabletop",
@@ -89,6 +89,23 @@ class ItchJam:
             jam_description=self.description,
         )
         table.upsert(jam, ["jam_id"])
+        
+    def load(self, name=None, creator=None, gametype=None, id=None):
+        table = self.db_conn["itch_jams"]
+        jam = table.find_one(jam_id=id)
+        self.id = jam["jam_id"]
+        self.name = jam["jam_name"]
+        self.owner_name = jam["jam_owner_name"]
+        self.owner_id = jam["jam_owner_id"]
+        self.start = jam["jam_start"]
+        self.duration = jam["jam_duration"]
+        self.gametype = GameType(jam["jam_gametype"]).value
+        self.description = jam["jam_description"]
+
+        return self
+        
+    def url(self):
+        return f"{self._itch_base_url}/jam/{self.id}"
 
 
 class ItchJamList:
@@ -100,20 +117,29 @@ class ItchJamList:
         if type(data) == ItchJam:
             self._list[jam_number] = data
         else:
-            raise TypeError("data must be a member of class ItchJam")
+            raise TypeError("item must be a member of class ItchJam")
 
     def __getitem__(self, jam_number):
         return self._list[jam_number]
+        
+    def __len__(self):
+        return len(self._list)
+        
+    def append(self, data):
+        if type(data) == ItchJam:
+            self._list.append(data)
+        else:
+            raise TypeError("item must be a member of class ItchJam")
+            
+    def extend(self, data):
+        if type(data) == list:
+            for item in data:
+                if type(data) != ItchJam:
+                    raise TypeError("item must be a member of class ItchJam")
+            self._list.extend(data)
+        else:
+            raise TypeError("data must be a list")
 
-    #     def __iter__(self):
-    #         self._current = 0
-    #         return self
-    #
-    #     def __next__(self):
-    #         self._current += 1
-    #         if self._list[self._current]:
-    #             return self._list[self._current]
-    #         raise StopIteration
 
     def save(self):
         for jam in self.list:
@@ -148,7 +174,7 @@ class ItchJamList:
 
 def get_jam_list_page(page=1):
     base_url = "https://itch.io/jams/starting-this-month"
-    jam_list = []
+    jam_list = ItchJamList()
 
     req_payload = {"page": page}
     try:
@@ -230,7 +256,7 @@ def list(type, name, creator, id):
         jam_list.load(gametype=type)
     
     for jam in jam_list:
-        print(f"{jam.name}")
+        print(f"{jam.name} <{jam.url()}>")
 
 
 @cli.command()
@@ -249,10 +275,17 @@ def show(id):
 @cloup.option(
     "--type",
     type=cloup.Choice(["tabletop", "digital", "unclassified"]),
+    required=True
 )
 def classify(id, type):
     """classify a jam as tabletop, digital, or unclassified"""
-    print(f"classifying {id} as {type}")
+    
+    for i in id:
+        print(f"classifying {i} as {type}")
+        jam = ItchJam()
+        jam.load(id=i)
+        jam.gametype = GameType[type.upper()]
+        jam.save()
 
 
 @cli.command()
