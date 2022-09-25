@@ -1,7 +1,7 @@
 import argparse
 import pprint
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 
 import click
@@ -32,7 +32,7 @@ class ItchJam:
     owner_name: str = None
     owner_id: str = None
     start: datetime = None
-    duration: timedelta = None
+    duration: int = None
     gametype: GameType = GameType.UNCLASSIFIED
     description: str = None
 
@@ -56,6 +56,10 @@ class ItchJam:
             except Exception as e:
                 print(f"ERROR: {e}")
         self.db_conn = ItchJam.db_conn
+        
+        if type(self.start) == str:
+            self.start = datetime.fromisoformat(self.start)
+            
 
     def crawl(self):
         jam_url = f"{self._itch_base_url}/jam/{self.id}"
@@ -89,7 +93,7 @@ class ItchJam:
             jam_description=self.description,
         )
         table.upsert(jam, ["jam_id"])
-        
+
     def load(self, name=None, creator=None, gametype=None, id=None):
         table = self.db_conn["itch_jams"]
         jam = table.find_one(jam_id=id)
@@ -97,13 +101,13 @@ class ItchJam:
         self.name = jam["jam_name"]
         self.owner_name = jam["jam_owner_name"]
         self.owner_id = jam["jam_owner_id"]
-        self.start = jam["jam_start"]
+        self.start = datetime.fromisoformat(jam["jam_start"])
         self.duration = jam["jam_duration"]
         self.gametype = GameType(jam["jam_gametype"]).value
         self.description = jam["jam_description"]
 
         return self
-        
+
     def url(self):
         return f"{self._itch_base_url}/jam/{self.id}"
 
@@ -121,16 +125,16 @@ class ItchJamList:
 
     def __getitem__(self, jam_number):
         return self._list[jam_number]
-        
+
     def __len__(self):
         return len(self._list)
-        
+
     def append(self, data):
         if type(data) == ItchJam:
             self._list.append(data)
         else:
             raise TypeError("item must be a member of class ItchJam")
-            
+
     def extend(self, data):
         if type(data) == list:
             for item in data:
@@ -139,7 +143,6 @@ class ItchJamList:
             self._list.extend(data)
         else:
             raise TypeError("data must be a list")
-
 
     def save(self):
         for jam in self.list:
@@ -164,7 +167,7 @@ class ItchJamList:
                     name=jam["jam_name"],
                     owner_name=jam["jam_owner_name"],
                     owner_id=jam["jam_owner_id"],
-                    start=jam["jam_start"],
+                    start=datetime.fromisoformat(jam["jam_start"]),
                     duration=jam["jam_duration"],
                     gametype=GameType(jam["jam_gametype"]).name,
                     description=jam["jam_description"],
@@ -194,14 +197,23 @@ def get_jam_list_page(page=1):
         jam_owner_id = jam_owner_url[8:].split(".")[0]
 
         jam_start = jam.find("span", class_="date_countdown")["title"]
-        jam_duration = jam.find("span", class_="date_duration").get_text()
-
+        jam_duration_string = jam.find("span", class_="date_duration").get_text()
+        if "day" in jam_duration_string:
+            jam_duration = int(jam_duration_string.split(" ")[0])
+        elif "month" in jam_duration_string:
+            jam_duration = int(jam_duration_string.split(" ")[0])*30
+            # This is wrong, and could be replaced with something more sophisticated
+            # that figures out ... whatever this means ... but I haven't seen any
+            # jam durations measured in months so it's not so important
+        elif "year" in jam_duration_string:
+            jam_duration = int(jam_duration_string.split(" ")[0])*365
+            
         jam = ItchJam(
             name=jam_name,
             id=jam_id,
             owner_name=jam_owner_name,
             owner_id=jam_owner_id,
-            start=jam_start,
+            start=datetime.fromisoformat(jam_start),
             duration=jam_duration,
         )
         jam_list.append(jam)
@@ -209,9 +221,15 @@ def get_jam_list_page(page=1):
     return jam_list
 
 
+####    CLI functionality starts here
+
+
 @cloup.group()
 def cli():
     """Tool for generating lists of itch.io game jams"""
+
+
+####    CLI argument: crawl
 
 
 @cli.command()
@@ -235,6 +253,9 @@ def crawl(force, url):
         jam.save()
 
 
+####    CLI argument: list
+
+
 @cli.command()
 @cloup.option_group(
     "Search options",
@@ -254,9 +275,12 @@ def list(type, name, creator, id):
     # This needs fixing -- better to set a default if there are no options
     if type:
         jam_list.load(gametype=type)
-    
+
     for jam in jam_list:
         print(f"{jam.name} <{jam.url()}>")
+
+
+####    CLI argument: show
 
 
 @cli.command()
@@ -270,22 +294,27 @@ def show(id):
         print(jam["jam_name"])
 
 
+####    CLI argument: classify
+
+
 @cli.command()
 @cloup.argument("id", nargs=-1)
 @cloup.option(
-    "--type",
-    type=cloup.Choice(["tabletop", "digital", "unclassified"]),
-    required=True
+    "--type", type=cloup.Choice(["tabletop", "digital", "unclassified"]), required=True
 )
 def classify(id, type):
     """classify a jam as tabletop, digital, or unclassified"""
-    
+
     for i in id:
         print(f"classifying {i} as {type}")
         jam = ItchJam()
         jam.load(id=i)
         jam.gametype = GameType[type.upper()]
         jam.save()
+        
+
+
+####    CLI argument: delete
 
 
 @cli.command()
