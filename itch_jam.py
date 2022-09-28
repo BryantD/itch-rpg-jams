@@ -89,8 +89,7 @@ class ItchJam:
         return jam_str
 
     def crawl(self, force_crawl=False):
-        table = self.db_conn["itch_jams"]
-        saved_jam = table.find_one(jam_id=self.id)
+        saved_jam = self.table.find_one(jam_id=self.id)
         if force_crawl or (not saved_jam) or (not saved_jam["jam_description"]):
             jam_url = f"{self._itch_base_url}/jam/{self.id}"
             try:
@@ -106,8 +105,7 @@ class ItchJam:
         return self.description
 
     def auto_classify(self):
-        table = self.db_conn["itch_jams"]
-        saved_jam = table.find_one(jam_id=self.id)
+        saved_jam = self.table.find_one(jam_id=self.id)
         if not saved_jam or saved_jam["jam_gametype"] == GameType.UNCLASSIFIED:
             if any(
                 element in self.description.lower()
@@ -120,7 +118,6 @@ class ItchJam:
         return self.gametype
 
     def save(self):
-        table = self.db_conn["itch_jams"]
         jam = dict(
             jam_id=self.id,
             jam_name=self.name,
@@ -131,28 +128,27 @@ class ItchJam:
             jam_gametype=self.gametype.value,
             jam_description=self.description,
         )
-        table.upsert(jam, ["jam_id"])
+        self.table.upsert(jam, ["jam_id"])
         self.db = True
 
     def load(self, id):
-        table = self.db_conn["itch_jams"]
-        jam = table.find_one(jam_id=id)
-        self.id = jam["jam_id"]
-        self.name = jam["jam_name"]
-        self.owner_name = jam["jam_owner_name"]
-        self.owner_id = jam["jam_owner_id"]
-        self.start = jam["jam_start"]
-        self.duration = jam["jam_duration"]
-        self.gametype = GameType(jam["jam_gametype"]).value
-        self.description = jam["jam_description"]
-        self.db = True
+        jam = self.table.find_one(jam_id=id)
+        if jam:
+            self.id = jam["jam_id"]
+            self.name = jam["jam_name"]
+            self.owner_name = jam["jam_owner_name"]
+            self.owner_id = jam["jam_owner_id"]
+            self.start = jam["jam_start"]
+            self.duration = jam["jam_duration"]
+            self.gametype = GameType(jam["jam_gametype"]).value
+            self.description = jam["jam_description"]
+            self.db = True
 
         return self
         
     def delete(self):
         if self.db:
             self.table.delete(jam_id=self.id)
-            print(self.id)
 
     def url(self):
         return f"{self._itch_base_url}/jam/{self.id}"
@@ -400,6 +396,9 @@ def delete(id):
     for id in id:
         jam = ItchJam()
         jam.load(id=id)
-        jam.delete()
+        if jam.id:
+            print(f"Deleting {id}")
+            jam.delete()
+        else:
+            print(f"{id} not found")
     
-    print(f"Deleting {id}")
