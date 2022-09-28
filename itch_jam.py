@@ -9,6 +9,8 @@ import cloup
 import dataset
 import requests
 from bs4 import BeautifulSoup
+from rich.console import Console
+from rich.table import Table
 from tqdm import tqdm
 
 REQ_HEADERS = {"user-agent": "itch-jam-bot/0.0.1"}
@@ -180,7 +182,7 @@ class ItchJamList:
         if name:
             jam_search = table.find(jam_name=name)
         elif creator:
-            jam_search = table.find(jam_creator=creator)
+            jam_search = table.find(jam_owner_id=creator)
         elif gametype:
             jam_search = table.find(jam_gametype=GameType[gametype.upper()].value)
         elif id:
@@ -304,16 +306,30 @@ def list(type, name, creator, id):
         
     if type:
         jam_list.load(gametype=type)
+        query = f"Jam Type = {type}"
     elif name:
         jam_list.load(name=name)
+        query = f"Jam Name = {name}"
     elif creator:
         jam_list.load(creator=creator)
+        query = f"Jam Creator = {creator}"
     elif id:
         jam_list.load(id=id)
-            
-    for jam in jam_list:
-        print(f"{jam.name} <{jam.url()}>")
+        query = f"Jam ID = {id}"
+    
+    if len(jam_list) > 0:
+        console = Console()
+        table = Table(title=f"{query}")
+        
+        table.add_column("Name")
+        table.add_column("ID")
+        table.add_column("URL", no_wrap=True)
+        table.add_column("Creator")
+        
+        for jam in jam_list:
+            table.add_row(jam.name, jam.id, jam.url(), jam.owner_name)
 
+        console.print(table)
 
 ####    CLI argument: show
 
