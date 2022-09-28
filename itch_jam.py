@@ -178,9 +178,9 @@ class ItchJamList:
         db_conn = dataset.connect(self._database_name, row_type=dict)
         table = db_conn["itch_jams"]
         if name:
-            jam_search = table.find(jam_name={""})
+            jam_search = table.find(jam_name=name)
         elif creator:
-            ...
+            jam_search = table.find(jam_creator=creator)
         elif gametype:
             jam_search = table.find(jam_gametype=GameType[gametype.upper()].value)
         elif id:
@@ -289,7 +289,6 @@ def crawl(force, url):
     cloup.option(
         "--type",
         type=cloup.Choice(["tabletop", "digital", "unclassified"]),
-        default="tabletop",
     ),
     cloup.option("--name"),
     cloup.option("--creator"),
@@ -299,10 +298,19 @@ def list(type, name, creator, id):
     """list tabletop jams (optionally search for by type, name, creator, or id)"""
 
     jam_list = ItchJamList()
-    # This needs fixing -- better to set a default if there are no options
+    
+    if not (type or name or creator or id):
+        type = "tabletop"
+        
     if type:
         jam_list.load(gametype=type)
-
+    elif name:
+        jam_list.load(name=name)
+    elif creator:
+        jam_list.load(creator=creator)
+    elif id:
+        jam_list.load(id=id)
+            
     for jam in jam_list:
         print(f"{jam.name} <{jam.url()}>")
 
