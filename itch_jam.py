@@ -1,7 +1,7 @@
 import argparse
 import pprint
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 
 import click
@@ -77,10 +77,10 @@ class ItchJam:
         )
         return jam_str
 
-    def crawl(self):
+    def crawl(self, force_crawl=False):
         table = self.db_conn["itch_jams"]
         saved_jam = table.find_one(jam_id=self.id)
-        if not saved_jam["jam_description"]:
+        if (not saved_jam and not saved_jam["jam_description"]) or force_crawl:
             jam_url = f"{self._itch_base_url}/jam/{self.id}"
             try:
                 req = requests.get(jam_url, headers=REQ_HEADERS)
@@ -97,7 +97,7 @@ class ItchJam:
     def auto_classify(self):
         table = self.db_conn["itch_jams"]
         saved_jam = table.find_one(jam_id=self.id)
-        if saved_jam["jam_gametype"] == GameType.UNCLASSIFIED:
+        if not saved_jam or saved_jam["jam_gametype"] == GameType.UNCLASSIFIED:
             if any(
                 element in self.description.lower()
                 for element in self.tabletop_keywords
@@ -139,6 +139,9 @@ class ItchJam:
     def url(self):
         return f"{self._itch_base_url}/jam/{self.id}"
 
+    def end(self):
+        return self.start + timedelta(days=self.duration)
+
 
 class ItchJamList:
     def __init__(self, database="sqlite:///itch_jams.sqlite"):
@@ -176,31 +179,35 @@ class ItchJamList:
         for jam in self.list:
             jam.save()
 
-    def load(self, name=None, creator=None, gametype=None, id=None):
-        db_conn = dataset.connect(self._database_name, row_type=dict)
+    def load(self, past_jams=False, name=None, owner=None, gametype=None, id=None):
+        db_conn = dataset.connect(self._database_name)
         table = db_conn["itch_jams"]
         if name:
             jam_search = table.find(jam_name=name)
-        elif creator:
-            jam_search = table.find(jam_owner_id=creator)
+        elif owner:
+            jam_search = table.find(jam_owner_id=owner)
         elif gametype:
             jam_search = table.find(jam_gametype=GameType[gametype.upper()].value)
         elif id:
             jam_search = table.find(jam_id=id)
 
         for jam in jam_search:
-            self._list.append(
-                ItchJam(
-                    id=jam["jam_id"],
-                    name=jam["jam_name"],
-                    owner_name=jam["jam_owner_name"],
-                    owner_id=jam["jam_owner_id"],
-                    start=jam["jam_start"],
-                    duration=jam["jam_duration"],
-                    gametype=GameType(jam["jam_gametype"]).name,
-                    description=jam["jam_description"],
+            if (
+                jam["jam_start"] + timedelta(days=jam["jam_duration"]) > datetime.now()
+                or past_jams
+            ):
+                self._list.append(
+                    ItchJam(
+                        id=jam["jam_id"],
+                        name=jam["jam_name"],
+                        owner_name=jam["jam_owner_name"],
+                        owner_id=jam["jam_owner_id"],
+                        start=jam["jam_start"],
+                        duration=jam["jam_duration"],
+                        gametype=GameType(jam["jam_gametype"]).name,
+                        description=jam["jam_description"],
+                    )
                 )
-            )
 
     def _crawl_page(self, page=1):
         base_url = "https://itch.io/jams/starting-this-month"
@@ -248,13 +255,13 @@ class ItchJamList:
             self._list.append(jam)
         return jams_flag
 
-    def crawl(self):
+    def crawl(self, force_crawl=False):
         page = 1
         while self._crawl_page(page):
             page = page + 1
 
         for jam in tqdm(self._list):
-            jam.crawl()
+            jam.crawl(force_crawl=force_crawl)
             jam.auto_classify()
             jam.save()
 
@@ -271,7 +278,7 @@ def cli():
 
 
 @cli.command()
-@cloup.option("--force", is_flag=True)
+@cloup.option("--force", is_flag=True, default=False)
 @cloup.option("--url")
 def crawl(force, url):
     """crawl upcoming game jams
@@ -279,7 +286,7 @@ def crawl(force, url):
     optionally force recrawls or crawl specific URLs
     """
     jam_list = ItchJamList()
-    jam_list.crawl()
+    jam_list.crawl(force_crawl=force)
 
 
 ####    CLI argument: list
@@ -293,43 +300,44 @@ def crawl(force, url):
         type=cloup.Choice(["tabletop", "digital", "unclassified"]),
     ),
     cloup.option("--name"),
-    cloup.option("--creator"),
+    cloup.option("--owner"),
     cloup.option("--id"),
 )
-def list(type, name, creator, id):
-    """list tabletop jams (optionally search for by type, name, creator, or id)"""
+def list(type, name, owner, id):
+    """list tabletop jams (optionally search for by type, name, owner, or id)"""
 
     jam_list = ItchJamList()
-    
-    if not (type or name or creator or id):
+
+    if not (type or name or owner or id):
         type = "tabletop"
-        
+
     if type:
         jam_list.load(gametype=type)
         query = f"Jam Type = {type}"
     elif name:
         jam_list.load(name=name)
         query = f"Jam Name = {name}"
-    elif creator:
-        jam_list.load(creator=creator)
-        query = f"Jam Creator = {creator}"
+    elif owner:
+        jam_list.load(owner=owner)
+        query = f"Jam Owner = {owner}"
     elif id:
         jam_list.load(id=id)
         query = f"Jam ID = {id}"
-    
+
     if len(jam_list) > 0:
         console = Console()
         table = Table(title=f"{query}")
-        
+
         table.add_column("Name")
         table.add_column("ID")
         table.add_column("URL", no_wrap=True)
-        table.add_column("Creator")
-        
+        table.add_column("Owner")
+
         for jam in jam_list:
             table.add_row(jam.name, jam.id, jam.url(), jam.owner_name)
 
         console.print(table)
+
 
 ####    CLI argument: show
 
