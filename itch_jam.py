@@ -55,12 +55,16 @@ class ItchJam:
         if ItchJam.db_conn is None:
             try:
                 ItchJam.db_conn = dataset.connect("sqlite:///itch_jams.sqlite")
+                ItchJam.table = self.db_conn["itch_jams"]
             except Exception as e:
                 print(f"ERROR: {e}")
         self.db_conn = ItchJam.db_conn
+        self.table = ItchJam.table
 
         if type(self.start) == str:
             self.start = datetime.fromisoformat(self.start)
+            
+        self.db = False
 
     def __str__(self):
         soup = BeautifulSoup(self.description, "html.parser")
@@ -80,7 +84,7 @@ class ItchJam:
     def crawl(self, force_crawl=False):
         table = self.db_conn["itch_jams"]
         saved_jam = table.find_one(jam_id=self.id)
-        if (not saved_jam and not saved_jam["jam_description"]) or force_crawl:
+        if force_crawl or (not saved_jam) or (not saved_jam["jam_description"]):
             jam_url = f"{self._itch_base_url}/jam/{self.id}"
             try:
                 req = requests.get(jam_url, headers=REQ_HEADERS)
@@ -121,6 +125,7 @@ class ItchJam:
             jam_description=self.description,
         )
         table.upsert(jam, ["jam_id"])
+        self.db = True
 
     def load(self, id):
         table = self.db_conn["itch_jams"]
@@ -133,8 +138,14 @@ class ItchJam:
         self.duration = jam["jam_duration"]
         self.gametype = GameType(jam["jam_gametype"]).value
         self.description = jam["jam_description"]
+        self.db = True
 
         return self
+        
+    def delete(self):
+        if self.db:
+            self.table.delete(jam_id=self.id)
+            print(self.id)
 
     def url(self):
         return f"{self._itch_base_url}/jam/{self.id}"
@@ -348,7 +359,7 @@ def show(id):
     """show detailed information for a jam"""
 
     jam = ItchJam()
-    jam.load(id=id)
+    jam.load(jam_id=id)
     print(jam)
 
 
@@ -378,4 +389,10 @@ def classify(id, type):
 @cloup.argument("id", nargs=-1)
 def delete(id):
     """delete a jam from the database"""
+    
+    for id in id:
+        jam = ItchJam()
+        jam.load(id=id)
+        jam.delete()
+    
     print(f"Deleting {id}")
