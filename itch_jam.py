@@ -56,27 +56,53 @@ class ItchJam:
             except Exception as e:
                 print(f"ERROR: {e}")
         self.db_conn = ItchJam.db_conn
-        
+
         if type(self.start) == str:
             self.start = datetime.fromisoformat(self.start)
-            
+
+    def __str__(self):
+        soup = BeautifulSoup(self.description, "html.parser")
+
+        jam_str = (
+            f"Jam: {self.name}\n"
+            f"Owner: {self.owner_name}\n"
+            f"URL: {self.url()}\n"
+            f"Type: {GameType(self.gametype).name.lower()}\n"
+            f"Start: {self.start}\n"
+            f"Duration: {self.duration} days\n"
+            f"\n"
+            f"{soup.get_text()}"
+        )
+        return jam_str
 
     def crawl(self):
-        jam_url = f"{self._itch_base_url}/jam/{self.id}"
-        try:
-            req = requests.get(jam_url, headers=REQ_HEADERS)
-        except requests.exceptions.RequestException as e:
-            print(e)
+        table = self.db_conn["itch_jams"]
+        saved_jam = table.find_one(jam_id=self.id)
+        if not saved_jam["jam_description"]:
+            jam_url = f"{self._itch_base_url}/jam/{self.id}"
+            try:
+                req = requests.get(jam_url, headers=REQ_HEADERS)
+            except requests.exceptions.RequestException as e:
+                print(e)
 
-        soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
-        self.description = str(soup.find("div", class_="jam_content"))
+            soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
+            self.description = str(soup.find("div", class_="jam_content"))
+        else:
+            self.description = saved_jam["jam_description"]
+
         return self.description
 
     def auto_classify(self):
-        if any(
-            element in self.description.lower() for element in self.tabletop_keywords
-        ):
-            self.gametype = GameType.TABLETOP
+        table = self.db_conn["itch_jams"]
+        saved_jam = table.find_one(jam_id=self.id)
+        if saved_jam["jam_gametype"] == GameType.UNCLASSIFIED:
+            if any(
+                element in self.description.lower()
+                for element in self.tabletop_keywords
+            ):
+                self.gametype = GameType.TABLETOP
+        else:
+            self.gametype = GameType(saved_jam["jam_gametype"])
 
         return self.gametype
 
@@ -94,14 +120,14 @@ class ItchJam:
         )
         table.upsert(jam, ["jam_id"])
 
-    def load(self, name=None, creator=None, gametype=None, id=None):
+    def load(self, id):
         table = self.db_conn["itch_jams"]
         jam = table.find_one(jam_id=id)
         self.id = jam["jam_id"]
         self.name = jam["jam_name"]
         self.owner_name = jam["jam_owner_name"]
         self.owner_id = jam["jam_owner_id"]
-        self.start = datetime.fromisoformat(jam["jam_start"])
+        self.start = jam["jam_start"]
         self.duration = jam["jam_duration"]
         self.gametype = GameType(jam["jam_gametype"]).value
         self.description = jam["jam_description"]
@@ -167,58 +193,68 @@ class ItchJamList:
                     name=jam["jam_name"],
                     owner_name=jam["jam_owner_name"],
                     owner_id=jam["jam_owner_id"],
-                    start=datetime.fromisoformat(jam["jam_start"]),
+                    start=jam["jam_start"],
                     duration=jam["jam_duration"],
                     gametype=GameType(jam["jam_gametype"]).name,
                     description=jam["jam_description"],
                 )
             )
 
+    def _crawl_page(self, page=1):
+        base_url = "https://itch.io/jams/starting-this-month"
+        req_payload = {"page": page}
 
-def get_jam_list_page(page=1):
-    base_url = "https://itch.io/jams/starting-this-month"
-    jam_list = ItchJamList()
+        jams_flag = False
 
-    req_payload = {"page": page}
-    try:
-        req = requests.get(base_url, headers=REQ_HEADERS, params=req_payload)
-    except requests.exceptions.RequestException as e:
-        print(e)
+        try:
+            req = requests.get(base_url, headers=REQ_HEADERS, params=req_payload)
+        except requests.exceptions.RequestException as e:
+            print(e)
 
-    soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
-    for jam in soup.find_all("div", class_="jam"):
-        jam_id = jam.find("h3").find("a")["href"].split("/")[2]
-        jam_name = jam.find("h3").find("a").get_text()
+        soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
+        for jam in soup.find_all("div", class_="jam"):
+            jams_flag = True
+            jam_id = jam.find("h3").find("a")["href"].split("/")[2]
+            jam_name = jam.find("h3").find("a").get_text()
 
-        jam_owner_name = jam.find("div", class_="hosted_by").find("a").get_text()
-        jam_owner_url = jam.find("div", class_="hosted_by").find("a")["href"]
-        # This is the most write-once way I could think of to extract a user ID
-        # from a URL
-        jam_owner_id = jam_owner_url[8:].split(".")[0]
+            jam_owner_name = jam.find("div", class_="hosted_by").find("a").get_text()
+            jam_owner_url = jam.find("div", class_="hosted_by").find("a")["href"]
+            # This is the most write-once way I could think of to extract a user ID
+            # from a URL
+            jam_owner_id = jam_owner_url[8:].split(".")[0]
 
-        jam_start = jam.find("span", class_="date_countdown")["title"]
-        jam_duration_string = jam.find("span", class_="date_duration").get_text()
-        if "day" in jam_duration_string:
-            jam_duration = int(jam_duration_string.split(" ")[0])
-        elif "month" in jam_duration_string:
-            jam_duration = int(jam_duration_string.split(" ")[0])*30
-            # This is wrong, and could be replaced with something more sophisticated
-            # that figures out ... whatever this means ... but I haven't seen any
-            # jam durations measured in months so it's not so important
-        elif "year" in jam_duration_string:
-            jam_duration = int(jam_duration_string.split(" ")[0])*365
-            
-        jam = ItchJam(
-            name=jam_name,
-            id=jam_id,
-            owner_name=jam_owner_name,
-            owner_id=jam_owner_id,
-            start=datetime.fromisoformat(jam_start),
-            duration=jam_duration,
-        )
-        jam_list.append(jam)
+            jam_start = jam.find("span", class_="date_countdown")["title"]
+            jam_duration_string = jam.find("span", class_="date_duration").get_text()
+            if "day" in jam_duration_string:
+                jam_duration = int(jam_duration_string.split(" ")[0])
+            elif "month" in jam_duration_string:
+                jam_duration = int(jam_duration_string.split(" ")[0]) * 30
+                # This is wrong, and could be replaced with something more sophisticated
+                # that figures out ... whatever this means ... but I haven't seen any
+                # jam durations measured in months so it's not so important
+            elif "year" in jam_duration_string:
+                jam_duration = int(jam_duration_string.split(" ")[0]) * 365
 
-    return jam_list
+            jam = ItchJam(
+                name=jam_name,
+                id=jam_id,
+                owner_name=jam_owner_name,
+                owner_id=jam_owner_id,
+                start=datetime.fromisoformat(jam_start),
+                duration=jam_duration,
+            )
+            self._list.append(jam)
+        return jams_flag
+
+    def crawl(self):
+        page = 1
+        while self._crawl_page(page):
+            page = page + 1
+
+        for jam in tqdm(self._list):
+            jam.crawl()
+            jam.auto_classify()
+            jam.save()
 
 
 ####    CLI functionality starts here
@@ -240,17 +276,8 @@ def crawl(force, url):
 
     optionally force recrawls or crawl specific URLs
     """
-    page = 1
-    jam_list = []
-
-    while new_jam_list := get_jam_list_page(page):
-        jam_list.extend(new_jam_list)
-        page = page + 1
-
-    for jam in tqdm(jam_list):
-        jam.crawl()
-        jam.auto_classify()
-        jam.save()
+    jam_list = ItchJamList()
+    jam_list.crawl()
 
 
 ####    CLI argument: list
@@ -288,10 +315,9 @@ def list(type, name, creator, id):
 def show(id):
     """show detailed information for a jam"""
 
-    db_conn = dataset.connect("sqlite:///itch_jams.sqlite", row_type=dict)
-    table = db_conn["itch_jams"]
-    for jam in table.find(jam_url={"=": GameType[type.upper()].value}):
-        print(jam["jam_name"])
+    jam = ItchJam()
+    jam.load(id=id)
+    print(jam)
 
 
 ####    CLI argument: classify
@@ -311,7 +337,6 @@ def classify(id, type):
         jam.load(id=i)
         jam.gametype = GameType[type.upper()]
         jam.save()
-        
 
 
 ####    CLI argument: delete
