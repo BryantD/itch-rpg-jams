@@ -3,6 +3,7 @@ import pprint
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+import re
 
 import click
 import cloup
@@ -10,6 +11,7 @@ import dataset
 import requests
 from bs4 import BeautifulSoup
 from rich.console import Console
+from rich.prompt import Prompt
 from rich.table import Table
 from tqdm import tqdm
 
@@ -70,21 +72,21 @@ class ItchJam:
 
         if type(self.start) == str:
             self.start = datetime.fromisoformat(self.start)
-            
+
         self.db = False
 
     def __str__(self):
         soup = BeautifulSoup(self.description, "html.parser")
-
+        description = re.sub("\n\n+", "\n\n", soup.get_text())
         jam_str = (
-            f"Jam: {self.name}\n"
-            f"Owner: {self.owner_name}\n"
+            f"Jam: {self.name} ({self.id})\n"
+            f"Owner: {self.owner_name} ({self.owner_id})\n"
             f"URL: {self.url()}\n"
             f"Type: {GameType(self.gametype).name.lower()}\n"
             f"Start: {self.start}\n"
             f"Duration: {self.duration} days\n"
             f"\n"
-            f"{soup.get_text()}"
+            f"{description}"
         )
         return jam_str
 
@@ -145,7 +147,7 @@ class ItchJam:
             self.db = True
 
         return self
-        
+
     def delete(self):
         if self.db:
             self.table.delete(jam_id=self.id)
@@ -371,18 +373,31 @@ def show(id):
 
 @cli.command()
 @cloup.argument("id", nargs=-1)
-@cloup.option(
-    "--type", type=cloup.Choice(["tabletop", "digital", "unclassified"]), required=True
-)
+@cloup.option("--type", type=cloup.Choice(["tabletop", "digital", "unclassified"]))
 def classify(id, type):
     """classify a jam as tabletop, digital, or unclassified"""
 
+    if not id:
+        id = []
+        jam_list = ItchJamList()
+        jam_list.load(gametype="unclassified")
+        for jam in jam_list:
+            id.append(jam.id)
+            
     for i in id:
-        print(f"classifying {i} as {type}")
         jam = ItchJam()
         jam.load(id=i)
-        jam.gametype = GameType[type.upper()]
+        if type:
+            jam.gametype = GameType[type.upper()]
+        else:
+            print(jam)
+            gametype = Prompt.ask(
+                "Game type", choices=["tabletop", "digital", "unclassified"]
+            )
+            jam.gametype = GameType[gametype.upper()]
+        print(f"Classifying {i} as {jam.gametype.name.lower()}")
         jam.save()
+
 
 
 ####    CLI argument: delete
@@ -392,7 +407,7 @@ def classify(id, type):
 @cloup.argument("id", nargs=-1)
 def delete(id):
     """delete a jam from the database"""
-    
+
     for id in id:
         jam = ItchJam()
         jam.load(id=id)
@@ -401,4 +416,3 @@ def delete(id):
             jam.delete()
         else:
             print(f"{id} not found")
-    
