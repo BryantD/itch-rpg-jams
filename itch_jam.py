@@ -362,7 +362,7 @@ def show(id):
     """show detailed information for a jam"""
 
     jam = ItchJam()
-    jam.load(jam_id=id)
+    jam.load(id=id)
     print(jam)
 
 
