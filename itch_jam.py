@@ -39,15 +39,22 @@ class ItchJam:
     description: str = None
 
     tabletop_keywords = [
-        "tabletop",
-        "osr",
+        "analog game",
+        "analogue game",
+        "belonging outside belonging",
         "fitd",
+        "gmless",
+        "megadungeon",
+        "osr",
+        "pamphlet",
         "pbta",
         "physical game",
-        "ttrpg",
-        "sworddream",
         "srd",
+        "sword dream",
+        "sworddream",
         "system reference document",
+        "tabletop",
+        "ttrpg",
     ]
     _itch_base_url = "https://itch.io"
 
