@@ -77,6 +77,8 @@ class ItchJam:
         self.db = False
 
     def __str__(self):
+        # Could stand to validate that the components exist
+        
         soup = BeautifulSoup(self.description, "html.parser")
         description = re.sub("\n\n+", "\n\n", soup.get_text())
         jam_str = (
@@ -95,7 +97,7 @@ class ItchJam:
     def crawl(self, force_crawl=False):
         # Should be improved to crawl all missing data in the event this is called
         # outside of the ItchJamList crawl context
-        
+
         saved_jam = self.table.find_one(jam_id=self.id)
         if force_crawl or (not saved_jam) or (not saved_jam["jam_description"]):
             jam_url = f"{self._itch_base_url}/jam/{self.id}"
@@ -103,17 +105,22 @@ class ItchJam:
                 req = requests.get(jam_url, headers=REQ_HEADERS)
             except requests.exceptions.RequestException as e:
                 print(e)
-
-            soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
+            http_code = req.status.code
             
-            self.description = str(soup.find("div", class_="jam_content"))
-            hashtag_link = soup.find("div", class_="jam_host_header").find("a", href=re.compile("twitter\.com\/hashtag\/"))
-            if hashtag_link:
-                self.hashtag = hashtag_link.get_text()
+            if req.ok:
+                soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
+
+                self.description = str(soup.find("div", class_="jam_content"))
+                hashtag_link = soup.find("div", class_="jam_host_header").find(
+                    "a", href=re.compile("twitter\.com\/hashtag\/")
+                )
+                if hashtag_link:
+                    self.hashtag = hashtag_link.get_text()
+                
         else:
             self.description = saved_jam["jam_description"]
 
-        return self.description
+        return http_code
 
     def auto_classify(self):
         saved_jam = self.table.find_one(jam_id=self.id)
@@ -306,17 +313,17 @@ def cli():
 
 @cli.command()
 @cloup.option("--force", is_flag=True, default=False)
-@cloup.option("--id")
+@cloup.argument("id", nargs=-1)
 def crawl(force, id):
     """crawl upcoming game jams
 
     optionally force recrawls or crawl specific URLs
     """
     if id:
-        jam = ItchJam(id=id)
-        jam.crawl()
-        if jam.description:
-            jam.save()
+        for i in id:
+            jam = ItchJam(id=i)
+            if jam.crawl():
+                jam.save()
     else:
         jam_list = ItchJamList()
         jam_list.crawl(force_crawl=force)
@@ -400,7 +407,7 @@ def classify(id, type):
         jam_list.load(gametype="unclassified")
         for jam in jam_list:
             id.append(jam.id)
-            
+
     for i in id:
         jam = ItchJam()
         jam.load(id=i)
@@ -414,7 +421,6 @@ def classify(id, type):
             jam.gametype = GameType[gametype.upper()]
         print(f"Classifying {i} as {jam.gametype.name.lower()}")
         jam.save()
-
 
 
 ####    CLI argument: delete
