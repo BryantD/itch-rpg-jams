@@ -38,6 +38,7 @@ class ItchJam:
     start: datetime = None
     duration: int = None
     gametype: GameType = GameType.UNCLASSIFIED
+    hashtag: str = None
     description: str = None
 
     tabletop_keywords = [
@@ -83,6 +84,7 @@ class ItchJam:
             f"Owner: {self.owner_name} ({self.owner_id})\n"
             f"URL: {self.url()}\n"
             f"Type: {GameType(self.gametype).name.lower()}\n"
+            f"Hashtag: {self.hashtag}\n"
             f"Start: {self.start}\n"
             f"Duration: {self.duration} days\n"
             f"\n"
@@ -91,6 +93,9 @@ class ItchJam:
         return jam_str
 
     def crawl(self, force_crawl=False):
+        # Should be improved to crawl all missing data in the event this is called
+        # outside of the ItchJamList crawl context
+        
         saved_jam = self.table.find_one(jam_id=self.id)
         if force_crawl or (not saved_jam) or (not saved_jam["jam_description"]):
             jam_url = f"{self._itch_base_url}/jam/{self.id}"
@@ -100,7 +105,11 @@ class ItchJam:
                 print(e)
 
             soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
+            
             self.description = str(soup.find("div", class_="jam_content"))
+            hashtag_link = soup.find("div", class_="jam_host_header").find("a", href=re.compile("twitter\.com\/hashtag\/"))
+            if hashtag_link:
+                self.hashtag = hashtag_link.get_text()
         else:
             self.description = saved_jam["jam_description"]
 
@@ -128,6 +137,7 @@ class ItchJam:
             jam_start=self.start,
             jam_duration=self.duration,
             jam_gametype=self.gametype.value,
+            jam_hashtag=self.hashtag,
             jam_description=self.description,
         )
         self.table.upsert(jam, ["jam_id"])
@@ -143,6 +153,7 @@ class ItchJam:
             self.start = jam["jam_start"]
             self.duration = jam["jam_duration"]
             self.gametype = GameType(jam["jam_gametype"]).value
+            self.hashtag = jam["jam_hashtag"]
             self.description = jam["jam_description"]
             self.db = True
 
@@ -295,14 +306,20 @@ def cli():
 
 @cli.command()
 @cloup.option("--force", is_flag=True, default=False)
-@cloup.option("--url")
-def crawl(force, url):
+@cloup.option("--id")
+def crawl(force, id):
     """crawl upcoming game jams
 
     optionally force recrawls or crawl specific URLs
     """
-    jam_list = ItchJamList()
-    jam_list.crawl(force_crawl=force)
+    if id:
+        jam = ItchJam(id=id)
+        jam.crawl()
+        if jam.description:
+            jam.save()
+    else:
+        jam_list = ItchJamList()
+        jam_list.crawl(force_crawl=force)
 
 
 ####    CLI argument: list
