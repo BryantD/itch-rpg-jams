@@ -11,9 +11,11 @@ import dataset
 import requests
 from bs4 import BeautifulSoup
 from rich.console import Console
+from rich.progress import Progress, TextColumn
 from rich.prompt import Prompt
 from rich.table import Table
-from tqdm import tqdm
+
+import time
 
 REQ_HEADERS = {"user-agent": "itch-jam-bot/0.0.1"}
 
@@ -30,16 +32,17 @@ class ItchJam:
     """Class for an individual itch game jam"""
 
     db_conn = None
+    table = None
 
     id: str = None
     name: str = None
     owner_name: str = None
-    owner_id: str = None
     start: datetime = None
     duration: int = None
     gametype: GameType = GameType.UNCLASSIFIED
     hashtag: str = None
     description: str = None
+    crawled: bool = False
 
     tabletop_keywords = [
         "analog game",
@@ -65,9 +68,12 @@ class ItchJam:
         if ItchJam.db_conn is None:
             try:
                 ItchJam.db_conn = dataset.connect("sqlite:///itch_jams.sqlite")
-                ItchJam.table = self.db_conn["itch_jams"]
             except Exception as e:
                 print(f"ERROR: {e}")
+
+        if ItchJam.table is None:
+            ItchJam.table = self.db_conn["itch_jams"]
+
         self.db_conn = ItchJam.db_conn
         self.table = ItchJam.table
 
@@ -78,12 +84,12 @@ class ItchJam:
 
     def __str__(self):
         # Could stand to validate that the components exist
-        
+
         soup = BeautifulSoup(self.description, "html.parser")
         description = re.sub("\n\n+", "\n\n", soup.get_text())
         jam_str = (
             f"Jam: {self.name} ({self.id})\n"
-            f"Owner: {self.owner_name} ({self.owner_id})\n"
+            f"Owner(s): {self.owner_name}\n"
             f"URL: {self.url()}\n"
             f"Type: {GameType(self.gametype).name.lower()}\n"
             f"Hashtag: {self.hashtag}\n"
@@ -94,33 +100,42 @@ class ItchJam:
         )
         return jam_str
 
-    def crawl(self, force_crawl=False):
-        # Should be improved to crawl all missing data in the event this is called
+    def crawl(self):
+        # Must be improved to crawl all missing data in the event this is called
         # outside of the ItchJamList crawl context
 
-        saved_jam = self.table.find_one(jam_id=self.id)
-        if force_crawl or (not saved_jam) or (not saved_jam["jam_description"]):
-            jam_url = f"{self._itch_base_url}/jam/{self.id}"
-            try:
-                req = requests.get(jam_url, headers=REQ_HEADERS)
-            except requests.exceptions.RequestException as e:
-                print(e)
-            http_code = req.status.code
+        jam_url = f"{self._itch_base_url}/jam/{self.id}"
+        try:
+            req = requests.get(jam_url, headers=REQ_HEADERS)
+        except requests.exceptions.RequestException as e:
+            print(e)
+
+        if req.ok:
+            self.crawled = True
+            soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
+
+            self.name = soup.find("h1", class_="jam_title_header").get_text()
+            self.description = str(soup.find("div", class_="jam_content"))
             
-            if req.ok:
-                soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
-
-                self.description = str(soup.find("div", class_="jam_content"))
-                hashtag_link = soup.find("div", class_="jam_host_header").find(
-                    "a", href=re.compile("twitter\.com\/hashtag\/")
-                )
-                if hashtag_link:
-                    self.hashtag = hashtag_link.get_text()
+            owners = []
+            for a_tag in soup.find("div", class_="jam_host_header").find_all("a"):
+                owners.append(a_tag.get_text())
+            self.owner_name = ", ".join(owners)
+            
+            hashtag_link = soup.find("div", class_="jam_host_header").find(
+                "a", href=re.compile("twitter\.com\/hashtag\/")
+            )
+            if hashtag_link:
+                self.hashtag = hashtag_link.get_text()
                 
-        else:
-            self.description = saved_jam["jam_description"]
-
-        return http_code
+            date_spans = soup.find_all("span", class_="date_format")
+            self.start = datetime.fromisoformat(f"{date_spans[0].get_text()}+00:00")
+            end_date = datetime.fromisoformat(f"{date_spans[1].get_text()}+00:00")
+            duration = end_date - self.start
+            self.duration = duration.days
+                
+        
+        return self.crawled
 
     def auto_classify(self):
         saved_jam = self.table.find_one(jam_id=self.id)
@@ -140,7 +155,6 @@ class ItchJam:
             jam_id=self.id,
             jam_name=self.name,
             jam_owner_name=self.owner_name,
-            jam_owner_id=self.owner_id,
             jam_start=self.start,
             jam_duration=self.duration,
             jam_gametype=self.gametype.value,
@@ -156,7 +170,6 @@ class ItchJam:
             self.id = jam["jam_id"]
             self.name = jam["jam_name"]
             self.owner_name = jam["jam_owner_name"]
-            self.owner_id = jam["jam_owner_id"]
             self.start = jam["jam_start"]
             self.duration = jam["jam_duration"]
             self.gametype = GameType(jam["jam_gametype"]).value
@@ -178,9 +191,25 @@ class ItchJam:
 
 
 class ItchJamList:
+
+    db_conn = None
+    table = None
+
     def __init__(self, database="sqlite:///itch_jams.sqlite"):
         self._list = []
         self._database_name = database
+
+        if ItchJamList.db_conn is None:
+            try:
+                ItchJamList.db_conn = dataset.connect("sqlite:///itch_jams.sqlite")
+            except Exception as e:
+                print(f"ERROR: {e}")
+
+        if ItchJamList.table is None:
+            ItchJamList.table = self.db_conn["itch_jams"]
+
+        self.db_conn = ItchJamList.db_conn
+        self.table = ItchJamList.table
 
     def __setitem__(self, jam_number, data):
         if type(data) == ItchJam:
@@ -213,17 +242,13 @@ class ItchJamList:
         for jam in self.list:
             jam.save()
 
-    def load(self, past_jams=False, name=None, owner=None, gametype=None, id=None):
-        db_conn = dataset.connect(self._database_name)
-        table = db_conn["itch_jams"]
+    def load(self, past_jams=False, name=None, gametype=None, id=None):
         if name:
-            jam_search = table.find(jam_name=name)
-        elif owner:
-            jam_search = table.find(jam_owner_id=owner)
+            jam_search = self.table.find(jam_name=name)
         elif gametype:
-            jam_search = table.find(jam_gametype=GameType[gametype.upper()].value)
+            jam_search = self.table.find(jam_gametype=GameType[gametype.upper()].value)
         elif id:
-            jam_search = table.find(jam_id=id)
+            jam_search = self.table.find(jam_id=id)
 
         for jam in jam_search:
             if (
@@ -235,7 +260,6 @@ class ItchJamList:
                         id=jam["jam_id"],
                         name=jam["jam_name"],
                         owner_name=jam["jam_owner_name"],
-                        owner_id=jam["jam_owner_id"],
                         start=jam["jam_start"],
                         duration=jam["jam_duration"],
                         gametype=GameType(jam["jam_gametype"]).name,
@@ -261,12 +285,14 @@ class ItchJamList:
             jam_name = jam.find("h3").find("a").get_text()
 
             jam_owner_name = jam.find("div", class_="hosted_by").find("a").get_text()
-            jam_owner_url = jam.find("div", class_="hosted_by").find("a")["href"]
-            # This is the most write-once way I could think of to extract a user ID
-            # from a URL
-            jam_owner_id = jam_owner_url[8:].split(".")[0]
 
-            jam_start = jam.find("span", class_="date_countdown")["title"]
+            print(jam_id)
+            
+            # So really all the date stuff should shift into the jam-level crawl...
+            jam_start_span = jam.find("span", class_="date_countdown")
+            if jam_start_span:
+                print(jam_start_span)
+                jam_start = jam_start_span["title"]
             jam_duration_string = jam.find("span", class_="date_duration").get_text()
             if "day" in jam_duration_string:
                 jam_duration = int(jam_duration_string.split(" ")[0])
@@ -282,7 +308,6 @@ class ItchJamList:
                 name=jam_name,
                 id=jam_id,
                 owner_name=jam_owner_name,
-                owner_id=jam_owner_id,
                 start=datetime.fromisoformat(jam_start),
                 duration=jam_duration,
             )
@@ -291,13 +316,21 @@ class ItchJamList:
 
     def crawl(self, force_crawl=False):
         page = 1
+
         while self._crawl_page(page):
             page = page + 1
 
-        for jam in tqdm(self._list):
-            jam.crawl(force_crawl=force_crawl)
-            jam.auto_classify()
-            jam.save()
+        with Progress(
+            *Progress.get_default_columns(), TextColumn("[bold]{task.fields[jam_name]}")
+        ) as progress:
+            crawl_task = progress.add_task("Crawling...", total=len(self._list), jam_name="")
+            for jam in self._list:
+                if force_crawl or not self.table.find_one(jam_id=jam.id):
+                    jam.crawl()
+                    jam.auto_classify()
+                    jam.save()
+                time.sleep(1)
+                progress.update(crawl_task, advance=1, jam_name=jam.name)
 
 
 ####    CLI functionality starts here
@@ -357,9 +390,6 @@ def list(type, name, owner, id):
     elif name:
         jam_list.load(name=name)
         query = f"Jam Name = {name}"
-    elif owner:
-        jam_list.load(owner=owner)
-        query = f"Jam Owner = {owner}"
     elif id:
         jam_list.load(id=id)
         query = f"Jam ID = {id}"
@@ -371,7 +401,7 @@ def list(type, name, owner, id):
         table.add_column("Name")
         table.add_column("ID")
         table.add_column("URL", no_wrap=True)
-        table.add_column("Owner")
+        table.add_column("Owner(s)")
 
         for jam in jam_list:
             table.add_row(jam.name, jam.id, jam.url(), jam.owner_name)
