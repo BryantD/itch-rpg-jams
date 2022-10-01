@@ -80,8 +80,6 @@ class ItchJam:
         if type(self.start) == str:
             self.start = datetime.fromisoformat(self.start)
 
-        self.db = False
-
     def __str__(self):
         # Could stand to validate that the components exist
 
@@ -116,25 +114,26 @@ class ItchJam:
 
             self.name = soup.find("h1", class_="jam_title_header").get_text()
             self.description = str(soup.find("div", class_="jam_content"))
-            
+
             owners = []
-            for a_tag in soup.find("div", class_="jam_host_header").find_all("a"):
+            for a_tag in soup.find("div", class_="jam_host_header").find_all(
+                "a", href=re.compile("\.itch\.io$")
+            ):
                 owners.append(a_tag.get_text())
             self.owner_name = ", ".join(owners)
-            
+
             hashtag_link = soup.find("div", class_="jam_host_header").find(
                 "a", href=re.compile("twitter\.com\/hashtag\/")
             )
             if hashtag_link:
                 self.hashtag = hashtag_link.get_text()
-                
+
             date_spans = soup.find_all("span", class_="date_format")
             self.start = datetime.fromisoformat(f"{date_spans[0].get_text()}+00:00")
             end_date = datetime.fromisoformat(f"{date_spans[1].get_text()}+00:00")
             duration = end_date - self.start
             self.duration = duration.days
-                
-        
+
         return self.crawled
 
     def auto_classify(self):
@@ -162,7 +161,7 @@ class ItchJam:
             jam_description=self.description,
         )
         self.table.upsert(jam, ["jam_id"])
-        self.db = True
+        self.crawled = True
 
     def load(self, id):
         jam = self.table.find_one(jam_id=id)
@@ -175,13 +174,14 @@ class ItchJam:
             self.gametype = GameType(jam["jam_gametype"]).value
             self.hashtag = jam["jam_hashtag"]
             self.description = jam["jam_description"]
-            self.db = True
+            self.crawled = True
 
         return self
 
     def delete(self):
-        if self.db:
+        if self.crawled:
             self.table.delete(jam_id=self.id)
+            self.crawled = False
 
     def url(self):
         return f"{self._itch_base_url}/jam/{self.id}"
@@ -282,35 +282,8 @@ class ItchJamList:
         for jam in soup.find_all("div", class_="jam"):
             jams_flag = True
             jam_id = jam.find("h3").find("a")["href"].split("/")[2]
-            jam_name = jam.find("h3").find("a").get_text()
 
-            jam_owner_name = jam.find("div", class_="hosted_by").find("a").get_text()
-
-            print(jam_id)
-            
-            # So really all the date stuff should shift into the jam-level crawl...
-            jam_start_span = jam.find("span", class_="date_countdown")
-            if jam_start_span:
-                print(jam_start_span)
-                jam_start = jam_start_span["title"]
-            jam_duration_string = jam.find("span", class_="date_duration").get_text()
-            if "day" in jam_duration_string:
-                jam_duration = int(jam_duration_string.split(" ")[0])
-            elif "month" in jam_duration_string:
-                jam_duration = int(jam_duration_string.split(" ")[0]) * 30
-                # This is wrong, and could be replaced with something more sophisticated
-                # that figures out ... whatever this means ... but I haven't seen any
-                # jam durations measured in months so it's not so important
-            elif "year" in jam_duration_string:
-                jam_duration = int(jam_duration_string.split(" ")[0]) * 365
-
-            jam = ItchJam(
-                name=jam_name,
-                id=jam_id,
-                owner_name=jam_owner_name,
-                start=datetime.fromisoformat(jam_start),
-                duration=jam_duration,
-            )
+            jam = ItchJam(id=jam_id)
             self._list.append(jam)
         return jams_flag
 
@@ -323,13 +296,14 @@ class ItchJamList:
         with Progress(
             *Progress.get_default_columns(), TextColumn("[bold]{task.fields[jam_name]}")
         ) as progress:
-            crawl_task = progress.add_task("Crawling...", total=len(self._list), jam_name="")
+            crawl_task = progress.add_task(
+                "Crawling...", total=len(self._list), jam_name=""
+            )
             for jam in self._list:
                 if force_crawl or not self.table.find_one(jam_id=jam.id):
                     jam.crawl()
                     jam.auto_classify()
                     jam.save()
-                time.sleep(1)
                 progress.update(crawl_task, advance=1, jam_name=jam.name)
 
 
@@ -356,6 +330,7 @@ def crawl(force, id):
         for i in id:
             jam = ItchJam(id=i)
             if jam.crawl():
+                jam.auto_classify()
                 jam.save()
     else:
         jam_list = ItchJamList()
@@ -419,7 +394,8 @@ def show(id):
 
     jam = ItchJam()
     jam.load(id=id)
-    print(jam)
+    if jam.crawled:
+        print(jam)
 
 
 ####    CLI argument: classify
@@ -464,7 +440,7 @@ def delete(id):
     for id in id:
         jam = ItchJam()
         jam.load(id=id)
-        if jam.id:
+        if jam.crawled:
             print(f"Deleting {id}")
             jam.delete()
         else:
