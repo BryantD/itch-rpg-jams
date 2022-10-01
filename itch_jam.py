@@ -8,6 +8,7 @@ import re
 import click
 import cloup
 import dataset
+import html2text
 import requests
 from bs4 import BeautifulSoup
 from rich.console import Console
@@ -83,8 +84,11 @@ class ItchJam:
     def __str__(self):
         # Could stand to validate that the components exist
 
-        soup = BeautifulSoup(self.description, "html.parser")
-        description = re.sub("\n\n+", "\n\n", soup.get_text())
+        h2t = html2text.HTML2Text()
+        h2t.ignore_links = True
+        h2t.ignore_images = True
+        h2t.strong_mark = "*"
+        description = re.sub("(\n\s*)+\n+", "\n\n", h2t.handle(self.description))
         jam_str = (
             f"Jam: {self.name} ({self.id})\n"
             f"Owner(s): {self.owner_name}\n"
@@ -99,9 +103,6 @@ class ItchJam:
         return jam_str
 
     def crawl(self):
-        # Must be improved to crawl all missing data in the event this is called
-        # outside of the ItchJamList crawl context
-
         jam_url = f"{self._itch_base_url}/jam/{self.id}"
         try:
             req = requests.get(jam_url, headers=REQ_HEADERS)
