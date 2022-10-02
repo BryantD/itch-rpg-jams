@@ -1,6 +1,5 @@
 import argparse
 import pprint
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 import json
@@ -29,22 +28,11 @@ class GameType(Enum):
     DIGITAL = 2
 
 
-@dataclass
 class ItchJam:
     """Class for an individual itch game jam"""
 
     db_conn = None
     table = None
-
-    id: str = None
-    name: str = None
-    owner_name: str = None
-    start: datetime = None
-    duration: int = None
-    gametype: GameType = GameType.UNCLASSIFIED
-    hashtag: str = None
-    description: str = None
-    crawled: bool = False
 
     _tabletop_keywords = [
         "analog game",
@@ -66,18 +54,24 @@ class ItchJam:
     ]
     _itch_base_url = "https://itch.io"
 
-    def __post_init__(self):
+    def __init__(self, id=None, name=None, owners=[], start=None, duration=None, gametype=GameType.UNCLASSIFIED, hashtag=None, description=None, crawled=False):  
+        self.id = id
+        self.name = name
+        self.owners = owners
+        self.start = start
+        self.duration = duration
+        self.gametype = gametype
+        self.hashtag = hashtag
+        self.description = description
+        self.crawled = crawled
+
         if ItchJam.db_conn is None:
             try:
                 ItchJam.db_conn = sqlite3.connect("test.db")
             except Exception as e:
                 print(f"ERROR: {e}")
 
-        #         if ItchJam.table is None:
-        #             ItchJam.table = self.db_conn["itch_jams"]
-
         self.db_conn = ItchJam.db_conn
-        #         self.table = ItchJam.table
 
         if type(self.start) == str:
             self.start = datetime.fromisoformat(f"{self.start}+00:00")
@@ -121,8 +115,10 @@ class ItchJam:
             for a_tag in soup.find("div", class_="jam_host_header").find_all(
                 "a", href=re.compile("\.itch\.io$")
             ):
-                owners.append(a_tag.get_text())
-            self.owner_name = ", ".join(owners)
+                owner_name = a_tag.get_text()
+                owner_id = a_tag.href[8:-8] # slurped out of the center of the URL
+                owners.append(owner_id, owner_name)
+            self.owners = owners
 
             hashtag_link = soup.find("div", class_="jam_host_header").find(
                 "a", href=re.compile("twitter\.com\/hashtag\/")
@@ -155,24 +151,10 @@ class ItchJam:
         return self.gametype
 
     def save(self):
-        jam = dict(
-            jam_id=self.id,
-            jam_name=self.name,
-            jam_owner_name=self.owner_name,
-            jam_start=self.start,
-            jam_duration=self.duration,
-            jam_gametype=self.gametype.value,
-            jam_hashtag=self.hashtag,
-            jam_description=self.description,
-        )
-        self.table.upsert(jam, ["jam_id"])
-        self.crawled = True
-
-    def save2(self):
         cur = self.db_conn.cursor()
         jam = dict(
             jam_name=self.name,
-            jam_owner={"test_id": self.owner_name, "second_id": "test name"},
+            jam_owners=self.owners,
             jam_start=self.start.timestamp(),
             jam_duration=self.duration,
             jam_gametype=self.gametype.value,
@@ -192,21 +174,6 @@ class ItchJam:
         self.crawled = True
 
     def load(self, id):
-        jam = self.table.find_one(jam_id=id)
-        if jam:
-            self.id = jam["jam_id"]
-            self.name = jam["jam_name"]
-            self.owner_name = jam["jam_owner_name"]
-            self.start = jam["jam_start"]
-            self.duration = jam["jam_duration"]
-            self.gametype = GameType(jam["jam_gametype"]).value
-            self.hashtag = jam["jam_hashtag"]
-            self.description = jam["jam_description"]
-            self.crawled = True
-
-        return self
-
-    def load2(self, id):
         saved_jam = self.db_conn.execute(
             """
             SELECT jam_id, jam_data FROM itch_jams WHERE jam_id = :jam_id
@@ -218,7 +185,7 @@ class ItchJam:
             jam_data = json.loads(saved_jam[1])
             self.id = saved_jam[0]
             self.name = jam_data["jam_name"]
-            self.owner_name = jam_data["jam_owner_name"]
+            self.owners = jam_data["jam_owners"]
             # Fix this
             self.start = jam_data["jam_start"]
             self.duration = jam_data["jam_duration"]
