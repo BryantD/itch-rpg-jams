@@ -2,6 +2,9 @@
 Itch Tabletop Jams.bbprojectd/
 __pycache__/
 itch_jam.egg-info/
-itch_jams.sqlite
-itch_jams.sqlite-shm
-itch_jams.sqlite-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal

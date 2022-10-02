@@ -3,11 +3,14 @@ import pprint
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+import json
+import sqlite3
 import re
 
 import click
 import cloup
-import dataset
+
+# import dataset
 import html2text
 import requests
 from bs4 import BeautifulSoup
@@ -15,8 +18,6 @@ from rich.console import Console
 from rich.progress import Progress, TextColumn
 from rich.prompt import Prompt
 from rich.table import Table
-
-import time
 
 REQ_HEADERS = {"user-agent": "itch-jam-bot/0.0.1"}
 
@@ -45,7 +46,7 @@ class ItchJam:
     description: str = None
     crawled: bool = False
 
-    tabletop_keywords = [
+    _tabletop_keywords = [
         "analog game",
         "analogue game",
         "belonging outside belonging",
@@ -68,18 +69,18 @@ class ItchJam:
     def __post_init__(self):
         if ItchJam.db_conn is None:
             try:
-                ItchJam.db_conn = dataset.connect("sqlite:///itch_jams.sqlite")
+                ItchJam.db_conn = sqlite3.connect("test.db")
             except Exception as e:
                 print(f"ERROR: {e}")
 
-        if ItchJam.table is None:
-            ItchJam.table = self.db_conn["itch_jams"]
+        #         if ItchJam.table is None:
+        #             ItchJam.table = self.db_conn["itch_jams"]
 
         self.db_conn = ItchJam.db_conn
-        self.table = ItchJam.table
+        #         self.table = ItchJam.table
 
         if type(self.start) == str:
-            self.start = datetime.fromisoformat(self.start)
+            self.start = datetime.fromisoformat(f"{self.start}+00:00")
 
     def __str__(self):
         # Could stand to validate that the components exist
@@ -138,15 +139,18 @@ class ItchJam:
         return self.crawled
 
     def auto_classify(self):
-        saved_jam = self.table.find_one(jam_id=self.id)
-        if not saved_jam or saved_jam["jam_gametype"] == GameType.UNCLASSIFIED:
-            if any(
-                element in self.description.lower()
-                for element in self.tabletop_keywords
-            ):
-                self.gametype = GameType.TABLETOP
-        else:
-            self.gametype = GameType(saved_jam["jam_gametype"])
+        saved_jam_gametype = self.db_conn.execute(
+            """
+            SELECT json_each.value 
+                FROM itch_jams, json_each(itch_jams.jam_data, '$.jam_gametype')
+            """
+        ).fetchone()
+        if saved_jam_gametype:
+            self.gametype = GameType(saved_jam_gametype[0])
+        elif any(
+            element in self.description.lower() for element in self._tabletop_keywords
+        ):
+            self.gametype = GameType.TABLETOP
 
         return self.gametype
 
@@ -164,6 +168,29 @@ class ItchJam:
         self.table.upsert(jam, ["jam_id"])
         self.crawled = True
 
+    def save2(self):
+        cur = self.db_conn.cursor()
+        jam = dict(
+            jam_name=self.name,
+            jam_owner={"test_id": self.owner_name, "second_id": "test name"},
+            jam_start=self.start.timestamp(),
+            jam_duration=self.duration,
+            jam_gametype=self.gametype.value,
+            jam_hashtag=self.hashtag,
+            jam_description=self.description,
+        )
+        cur.execute(
+            """
+            INSERT INTO itch_jams VALUES (:jam_id, :jam_data) ON CONFLICT(jam_id) 
+                DO UPDATE SET jam_data=:jam_data
+            """,
+            {"jam_id": self.id, "jam_data": json.dumps(jam)},
+        )
+        cur.close()
+        self.db_conn.commit()
+
+        self.crawled = True
+
     def load(self, id):
         jam = self.table.find_one(jam_id=id)
         if jam:
@@ -178,6 +205,34 @@ class ItchJam:
             self.crawled = True
 
         return self
+
+    def load2(self, id):
+        saved_jam = self.db_conn.execute(
+            """
+            SELECT jam_id, jam_data FROM itch_jams WHERE jam_id = :jam_id
+            """,
+            {"jam_id": id}
+        ).fetchone()
+        
+        if saved_jam:
+            jam_data = json.loads(saved_jam[1])
+            self.id = saved_jam[0]
+            self.name = jam_data["jam_name"]
+            self.owner_name = jam_data["jam_owner_name"]
+            # Fix this
+            self.start = jam_data["jam_start"]
+            self.duration = jam_data["jam_duration"]
+            self.gametype = GameType(jam_data["jam_gametype"]).value
+            self.hashtag = jam_data["jam_hashtag"]
+            self.description = jam_data["jam_description"]
+            self.crawled = True
+
+        return self
+
+
+        # select itch_jams.jam_id from itch_jams, json_each(itch_jams.jam_data, '$.jam_duration') where json_each.value == 11;
+        # select itch_jams.jam_id from itch_jams, json_tree(itch_jams.jam_data, '$.jam_owner') where json_tree.key == "testid";
+        # datetime.utcfromtimestamp(timestamp)
 
     def delete(self):
         if self.crawled:
@@ -332,7 +387,7 @@ def crawl(force, id):
             jam = ItchJam(id=i)
             if jam.crawl():
                 jam.auto_classify()
-                jam.save()
+                jam.save2()
     else:
         jam_list = ItchJamList()
         jam_list.crawl(force_crawl=force)
@@ -393,10 +448,11 @@ def list(type, name, owner, id):
 def show(id):
     """show detailed information for a jam"""
 
-    jam = ItchJam()
-    jam.load(id=id)
-    if jam.crawled:
-        print(jam)
+    for i in id:
+        jam = ItchJam()
+        jam.load2(id=i)
+        if jam.crawled:
+            print(jam)
 
 
 ####    CLI argument: classify
