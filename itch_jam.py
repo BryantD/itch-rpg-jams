@@ -84,9 +84,11 @@ class ItchJam:
         h2t.ignore_images = True
         h2t.strong_mark = "*"
         description = re.sub("(\n\s*)+\n+", "\n\n", h2t.handle(self.description))
+        owner_string = ", ".join(map(lambda tup: tup[0], self.owners))
+        
         jam_str = (
             f"Jam: {self.name} ({self.id})\n"
-            f"Owner(s): {self.owner_name}\n"
+            f"Owner(s): {owner_string}\n"
             f"URL: {self.url()}\n"
             f"Type: {GameType(self.gametype).name.lower()}\n"
             f"Hashtag: {self.hashtag}\n"
@@ -116,8 +118,8 @@ class ItchJam:
                 "a", href=re.compile("\.itch\.io$")
             ):
                 owner_name = a_tag.get_text()
-                owner_id = a_tag.href[8:-8] # slurped out of the center of the URL
-                owners.append(owner_id, owner_name)
+                owner_id = a_tag["href"][8:-8] # slurped out of the center of the URL
+                owners.append((owner_id, owner_name))
             self.owners = owners
 
             hashtag_link = soup.find("div", class_="jam_host_header").find(
@@ -354,7 +356,7 @@ def crawl(force, id):
             jam = ItchJam(id=i)
             if jam.crawl():
                 jam.auto_classify()
-                jam.save2()
+                jam.save()
     else:
         jam_list = ItchJamList()
         jam_list.crawl(force_crawl=force)
@@ -417,7 +419,7 @@ def show(id):
 
     for i in id:
         jam = ItchJam()
-        jam.load2(id=i)
+        jam.load(id=i)
         if jam.crawled:
             print(jam)
 
