@@ -32,7 +32,6 @@ class ItchJam:
     """Class for an individual itch game jam"""
 
     db_conn = None
-    table = None
 
     _tabletop_keywords = [
         "analog game",
@@ -189,7 +188,7 @@ class ItchJam:
             self.name = jam_data["jam_name"]
             self.owners = jam_data["jam_owners"]
             # Fix this
-            self.start = jam_data["jam_start"]
+            self.start = datetime.fromtimestamp(jam_data["jam_start"])
             self.duration = jam_data["jam_duration"]
             self.gametype = GameType(jam_data["jam_gametype"]).value
             self.hashtag = jam_data["jam_hashtag"]
