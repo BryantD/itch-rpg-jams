@@ -53,7 +53,18 @@ class ItchJam:
     ]
     _itch_base_url = "https://itch.io"
 
-    def __init__(self, id=None, name=None, owners=[], start=None, duration=None, gametype=GameType.UNCLASSIFIED, hashtag=None, description=None, crawled=False):  
+    def __init__(
+        self,
+        id=None,
+        name=None,
+        owners=[],
+        start=None,
+        duration=None,
+        gametype=GameType.UNCLASSIFIED,
+        hashtag=None,
+        description=None,
+        crawled=False,
+    ):
         self.id = id
         self.name = name
         self.owners = owners
@@ -84,7 +95,7 @@ class ItchJam:
         h2t.strong_mark = "*"
         description = re.sub("(\n\s*)+\n+", "\n\n", h2t.handle(self.description))
         owner_string = ", ".join(map(lambda tup: tup[0], self.owners))
-        
+
         jam_str = (
             f"Jam: {self.name} ({self.id})\n"
             f"Owner(s): {owner_string}\n"
@@ -117,7 +128,7 @@ class ItchJam:
                 "a", href=re.compile("\.itch\.io$")
             ):
                 owner_name = a_tag.get_text()
-                owner_id = a_tag["href"][8:-8] # slurped out of the center of the URL
+                owner_id = a_tag["href"][8:-8]  # slurped out of the center of the URL
                 owners.append((owner_id, owner_name))
             self.owners = owners
 
@@ -179,16 +190,15 @@ class ItchJam:
             """
             SELECT jam_id, jam_data FROM itch_jams WHERE jam_id = :jam_id
             """,
-            {"jam_id": id}
+            {"jam_id": id},
         ).fetchone()
-        
+
         if saved_jam:
             jam_data = json.loads(saved_jam[1])
             self.id = saved_jam[0]
             self.name = jam_data["jam_name"]
             self.owners = jam_data["jam_owners"]
-            # Fix this
-            self.start = datetime.fromtimestamp(jam_data["jam_start"])
+            self.start = datetime.utcfromtimestamp(jam_data["jam_start"])
             self.duration = jam_data["jam_duration"]
             self.gametype = GameType(jam_data["jam_gametype"]).value
             self.hashtag = jam_data["jam_hashtag"]
@@ -196,11 +206,6 @@ class ItchJam:
             self.crawled = True
 
         return self
-
-
-        # select itch_jams.jam_id from itch_jams, json_each(itch_jams.jam_data, '$.jam_duration') where json_each.value == 11;
-        # select itch_jams.jam_id from itch_jams, json_tree(itch_jams.jam_data, '$.jam_owner') where json_tree.key == "testid";
-        # datetime.utcfromtimestamp(timestamp)
 
     def delete(self):
         if self.crawled:
@@ -217,7 +222,6 @@ class ItchJam:
 class ItchJamList:
 
     db_conn = None
-    table = None
 
     def __init__(self, database="sqlite:///itch_jams.sqlite"):
         self._list = []
@@ -225,15 +229,11 @@ class ItchJamList:
 
         if ItchJamList.db_conn is None:
             try:
-                ItchJamList.db_conn = dataset.connect("sqlite:///itch_jams.sqlite")
+                ItchJamList.db_conn = sqlite3.connect("test.db")
             except Exception as e:
                 print(f"ERROR: {e}")
 
-        if ItchJamList.table is None:
-            ItchJamList.table = self.db_conn["itch_jams"]
-
         self.db_conn = ItchJamList.db_conn
-        self.table = ItchJamList.table
 
     def __setitem__(self, jam_number, data):
         if type(data) == ItchJam:
@@ -266,30 +266,47 @@ class ItchJamList:
         for jam in self.list:
             jam.save()
 
-    def load(self, past_jams=False, name=None, gametype=None, id=None):
-        if name:
-            jam_search = self.table.find(jam_name=name)
+    def load(self, past_jams=False, owner_id=None, gametype=None, jam_id=None):
+
+        # select itch_jams.jam_id from itch_jams, json_each(itch_jams.jam_data, '$.jam_duration') where json_each.value == 11;
+        # select itch_jams.jam_id from itch_jams, json_tree(itch_jams.jam_data, '$.jam_owner') where json_tree.key == "testid";
+
+        if owner_id:
+            jam_search = self.db_conn.execute(
+                """
+                SELECT itch_jams.jam_id, itch_jams.jam_data 
+                FROM itch_jams, json_tree(itch_jams.jam_data, "$.jam_owner") 
+                WHERE jam_id = :jam_id
+                """,
+                {"jam_id": jam_id},
+            )
         elif gametype:
-            jam_search = self.table.find(jam_gametype=GameType[gametype.upper()].value)
+            jam_search = self.db_conn.execute(
+                """
+                SELECT itch_jams.jam_id, itch_jams.jam_data 
+                FROM itch_jams, json_each(itch_jams.jam_data, "$.jam_gametype") 
+                WHERE json_each.value = :gametype
+                """,
+                {"gametype": GameType[gametype.upper()].value},
+            )
         elif id:
-            jam_search = self.table.find(jam_id=id)
+            jam_search = self.db_conn.execute(
+                """
+                SELECT itch_jams.jam_id, itch_jams.jam_data 
+                FROM itch_jams WHERE jam_id = :jam_id
+                """,
+                {"jam_id": jam_id},
+            )
 
         for jam in jam_search:
-            if (
-                jam["jam_start"] + timedelta(days=jam["jam_duration"]) > datetime.now()
-                or past_jams
-            ):
-                self._list.append(
-                    ItchJam(
-                        id=jam["jam_id"],
-                        name=jam["jam_name"],
-                        owner_name=jam["jam_owner_name"],
-                        start=jam["jam_start"],
-                        duration=jam["jam_duration"],
-                        gametype=GameType(jam["jam_gametype"]).name,
-                        description=jam["jam_description"],
-                    )
-                )
+#             if (
+#                 jam["jam_start"] + timedelta(days=jam["jam_duration"]) > datetime.now()
+#                 or past_jams
+#             ):
+
+            jam_load = ItchJam()
+            jam_load.load(id=jam[0])
+            self._list.append(jam_load)
 
     def _crawl_page(self, page=1):
         base_url = "https://itch.io/jams/starting-this-month"
@@ -403,7 +420,8 @@ def list(type, name, owner, id):
         table.add_column("Owner(s)")
 
         for jam in jam_list:
-            table.add_row(jam.name, jam.id, jam.url(), jam.owner_name)
+            owner_string = ", ".join(map(lambda tup: tup[0], jam.owners))
+            table.add_row(jam.name, jam.id, jam.url(), owner_string)
 
         console.print(table)
 
