@@ -274,7 +274,7 @@ class ItchJamList:
         if owner_id:
             jam_search = self.db_conn.execute(
                 """
-                SELECT itch_jams.jam_id
+                SELECT itch_jams.jam_id, itch_jams.jam_data
                 FROM itch_jams, json_tree(itch_jams.jam_data, "$.jam_owners")
                 WHERE json_tree.key = :owner_id
                 """,
@@ -283,7 +283,7 @@ class ItchJamList:
         elif gametype:
             jam_search = self.db_conn.execute(
                 """
-                SELECT itch_jams.jam_id
+                SELECT itch_jams.jam_id, itch_jams.jam_data
                 FROM itch_jams, json_each(itch_jams.jam_data, "$.jam_gametype")
                 WHERE json_each.value = :gametype
                 """,
@@ -292,22 +292,23 @@ class ItchJamList:
         elif id:
             jam_search = self.db_conn.execute(
                 """
-                SELECT itch_jams.jam_id
+                SELECT itch_jams.jam_id, itch_jams.jam_data
                 FROM itch_jams WHERE jam_id = :jam_id
                 """,
                 {"jam_id": jam_id},
             )
 
         for jam in jam_search:
-            # FIX ME
-            #             if (
-            #                 jam["jam_start"] + timedelta(days=jam["jam_duration"]) > datetime.now()
-            #                 or past_jams
-            #             ):
-
-            jam_load = ItchJam()
-            jam_load.load(id=jam[0])
-            self._list.append(jam_load)
+            jam_json = json.loads(jam[1])
+            if (
+                datetime.utcfromtimestamp(jam_json["jam_start"])
+                + timedelta(days=jam_json["jam_duration"])
+                > datetime.now()
+                or past_jams
+            ):
+                jam_load = ItchJam()
+                jam_load.load(id=jam[0])
+                self._list.append(jam_load)
 
     def _crawl_page(self, page=1):
         base_url = "https://itch.io/jams/starting-this-month"
@@ -402,7 +403,8 @@ def crawl(force, id):
     cloup.option("--owner"),
     cloup.option("--id"),
 )
-def list(type, owner, id):
+@cloup.option("--old", is_flag=True, default=False, help="Include old jams")
+def list(type, owner, id, old):
     """list tabletop jams (optionally search for by type, owner ID, or jam ID)"""
 
     jam_list = ItchJamList()
@@ -411,13 +413,13 @@ def list(type, owner, id):
         type = "tabletop"
 
     if type:
-        jam_list.load(gametype=type)
+        jam_list.load(gametype=type, past_jams=old)
         query = f"Jam Type = {type}"
     elif id:
-        jam_list.load(jam_id=id)
+        jam_list.load(jam_id=id, past_jams=old)
         query = f"Jam ID = {id}"
     elif owner:
-        jam_list.load(owner_id=owner)
+        jam_list.load(owner_id=owner, past_jams=old)
         query = f"Jam Owner = {owner}"
 
     if len(jam_list) > 0:
