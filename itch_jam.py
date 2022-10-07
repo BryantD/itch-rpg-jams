@@ -104,7 +104,7 @@ class ItchJam:
             f"{description}"
         )
         return jam_str
-        
+
     def owner_ids(self):
         if self.owners:
             return ", ".join(self.owners.keys())
@@ -156,7 +156,6 @@ class ItchJam:
             WHERE jam_id = :jam_id
             """,
             {"jam_id": self.id},
-
         ).fetchone()
         if saved_jam_gametype:
             self.gametype = GameType(saved_jam_gametype[0])
@@ -271,11 +270,11 @@ class ItchJamList:
         for jam in self.list:
             jam.save()
 
-    def load(self, past_jams=False, owner_id=None, gametype=None, jam_id=None):        
+    def load(self, past_jams=False, owner_id=None, gametype=None, jam_id=None):
         if owner_id:
             jam_search = self.db_conn.execute(
                 """
-                SELECT itch_jams.jam_id, itch_jams.jam_data
+                SELECT itch_jams.jam_id
                 FROM itch_jams, json_tree(itch_jams.jam_data, "$.jam_owners")
                 WHERE json_tree.key = :owner_id
                 """,
@@ -284,7 +283,7 @@ class ItchJamList:
         elif gametype:
             jam_search = self.db_conn.execute(
                 """
-                SELECT itch_jams.jam_id, itch_jams.jam_data
+                SELECT itch_jams.jam_id
                 FROM itch_jams, json_each(itch_jams.jam_data, "$.jam_gametype")
                 WHERE json_each.value = :gametype
                 """,
@@ -293,7 +292,7 @@ class ItchJamList:
         elif id:
             jam_search = self.db_conn.execute(
                 """
-                SELECT itch_jams.jam_id, itch_jams.jam_data
+                SELECT itch_jams.jam_id
                 FROM itch_jams WHERE jam_id = :jam_id
                 """,
                 {"jam_id": jam_id},
@@ -322,7 +321,7 @@ class ItchJamList:
             print(e)
 
         soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
-                
+
         for jam in soup.find_all("div", class_="jam"):
             jams_flag = True
             jam_id = jam.find("h3").find("a")["href"].split("/")[2]
@@ -333,14 +332,14 @@ class ItchJamList:
 
     def crawl(self, force_crawl=False):
         page = 1
-        
+
         cur = self.db_conn.cursor()
         cur.execute(
             """
             SELECT jam_id FROM itch_jams
             """
         )
-        jam_ids = [ item[0] for item in cur.fetchall() ]
+        jam_ids = [item[0] for item in cur.fetchall()]
         cur.close()
 
         while self._crawl_page(page):
