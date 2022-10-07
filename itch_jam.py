@@ -322,6 +322,7 @@ class ItchJamList:
             print(e)
 
         soup = BeautifulSoup(req.content.decode("utf-8"), "html.parser")
+                
         for jam in soup.find_all("div", class_="jam"):
             jams_flag = True
             jam_id = jam.find("h3").find("a")["href"].split("/")[2]
@@ -332,6 +333,15 @@ class ItchJamList:
 
     def crawl(self, force_crawl=False):
         page = 1
+        
+        cur = self.db_conn.cursor()
+        cur.execute(
+            """
+            SELECT jam_id FROM itch_jams
+            """
+        )
+        jam_ids = [ item[0] for item in cur.fetchall() ]
+        cur.close()
 
         while self._crawl_page(page):
             page = page + 1
@@ -343,7 +353,7 @@ class ItchJamList:
                 "Crawling...", total=len(self._list), jam_name=""
             )
             for jam in self._list:
-                if force_crawl or not self.table.find_one(jam_id=jam.id):
+                if force_crawl or not jam.id in jam_ids:
                     jam.crawl()
                     jam.auto_classify()
                     jam.save()
@@ -383,8 +393,6 @@ def crawl(force, id):
 ####    CLI argument: list
 
 
-#     itch-jam list --search=id foo
-#     itch-jam list --search-name "whatever name"
 @cli.command()
 @cloup.option_group(
     "Search options",
