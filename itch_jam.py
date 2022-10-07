@@ -1,11 +1,10 @@
+import json
+import re
+import sqlite3
 from datetime import datetime, timedelta
 from enum import Enum
-import json
-import sqlite3
-import re
 
 import cloup
-
 import html2text
 import requests
 from bs4 import BeautifulSoup
@@ -89,7 +88,7 @@ class ItchJam:
         h2t.ignore_links = True
         h2t.ignore_images = True
         h2t.strong_mark = "*"
-        description = re.sub("(\n\s*)+\n+", "\n\n", h2t.handle(self.description))
+        description = re.sub(r"(\n\s*)+\n+", "\n\n", h2t.handle(self.description))
 
         jam_str = (
             f"Jam: {self.name} ({self.id})\n"
@@ -126,7 +125,7 @@ class ItchJam:
 
             owners = {}
             for a_tag in soup.find("div", class_="jam_host_header").find_all(
-                "a", href=re.compile("\.itch\.io$")
+                "a", href=re.compile(r"\.itch\.io$")
             ):
                 owner_name = a_tag.get_text()
                 owner_id = a_tag["href"][8:-8]  # slurped out of the center of the URL
@@ -134,7 +133,7 @@ class ItchJam:
             self.owners = owners
 
             hashtag_link = soup.find("div", class_="jam_host_header").find(
-                "a", href=re.compile("twitter\.com\/hashtag\/")
+                "a", href=re.compile(r"twitter\.com\/hashtag\/")
             )
             if hashtag_link:
                 self.hashtag = hashtag_link.get_text()
@@ -150,9 +149,9 @@ class ItchJam:
     def auto_classify(self):
         saved_jam_gametype = self.db_conn.execute(
             """
-            SELECT json_each.value 
-            FROM itch_jams, json_each(itch_jams.jam_data, '$.jam_gametype')
-            WHERE jam_id = :jam_id
+            SELECT json_each.value
+                FROM itch_jams, json_each(itch_jams.jam_data, '$.jam_gametype')
+                WHERE jam_id = :jam_id
             """,
             {"jam_id": self.id},
         ).fetchone()
@@ -178,8 +177,8 @@ class ItchJam:
         )
         cur.execute(
             """
-            INSERT INTO itch_jams VALUES (:jam_id, :jam_data) ON CONFLICT(jam_id) 
-                DO UPDATE SET jam_data=:jam_data
+            INSERT INTO itch_jams VALUES (:jam_id, :jam_data)
+                ON CONFLICT(jam_id) DO UPDATE SET jam_data=:jam_data
             """,
             {"jam_id": self.id, "jam_data": json.dumps(jam)},
         )
@@ -279,8 +278,8 @@ class ItchJamList:
             jam_search = self.db_conn.execute(
                 """
                 SELECT itch_jams.jam_id, itch_jams.jam_data
-                FROM itch_jams, json_tree(itch_jams.jam_data, "$.jam_owners")
-                WHERE json_tree.key = :owner_id
+                    FROM itch_jams, json_tree(itch_jams.jam_data, "$.jam_owners")
+                    WHERE json_tree.key = :owner_id
                 """,
                 {"owner_id": owner_id},
             )
@@ -288,8 +287,8 @@ class ItchJamList:
             jam_search = self.db_conn.execute(
                 """
                 SELECT itch_jams.jam_id, itch_jams.jam_data
-                FROM itch_jams, json_each(itch_jams.jam_data, "$.jam_gametype")
-                WHERE json_each.value = :gametype
+                    FROM itch_jams, json_each(itch_jams.jam_data, "$.jam_gametype")
+                    WHERE json_each.value = :gametype
                 """,
                 {"gametype": GameType[gametype.upper()].value},
             )
@@ -297,7 +296,8 @@ class ItchJamList:
             jam_search = self.db_conn.execute(
                 """
                 SELECT itch_jams.jam_id, itch_jams.jam_data
-                FROM itch_jams WHERE jam_id = :jam_id
+                    FROM itch_jams
+                    WHERE jam_id = :jam_id
                 """,
                 {"jam_id": jam_id},
             )
@@ -357,22 +357,16 @@ class ItchJamList:
                 "Crawling...", total=len(self._list), jam_name=""
             )
             for jam in self._list:
-                if force_crawl or not jam.id in jam_ids:
+                if force_crawl or jam.id not in jam_ids:
                     jam.crawl()
                     jam.auto_classify()
                     jam.save()
                 progress.update(crawl_task, advance=1, jam_name=jam.name)
 
 
-####    CLI functionality starts here
-
-
 @cloup.group()
 def cli():
     """Tool for generating lists of itch.io game jams"""
-
-
-####    CLI argument: crawl
 
 
 @cli.command()
@@ -392,9 +386,6 @@ def crawl(force, id):
     else:
         jam_list = ItchJamList()
         jam_list.crawl(force_crawl=force)
-
-
-####    CLI argument: list
 
 
 @cli.command()
@@ -441,9 +432,6 @@ def list(type, owner, id, old):
         console.print(table)
 
 
-####    CLI argument: show
-
-
 @cli.command()
 @cloup.argument("id", nargs=-1, help="One or more jam IDs to show")
 def show(id):
@@ -454,9 +442,6 @@ def show(id):
         jam.load(id=i)
         if jam.crawled:
             print(jam)
-
-
-####    CLI argument: classify
 
 
 @cli.command()
@@ -485,9 +470,6 @@ def classify(id, type):
             jam.gametype = GameType[gametype.upper()]
         print(f"Classifying {i} as {jam.gametype.name.lower()}")
         jam.save()
-
-
-####    CLI argument: delete
 
 
 @cli.command()
