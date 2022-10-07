@@ -4,7 +4,6 @@ import json
 import sqlite3
 import re
 
-import click
 import cloup
 
 import html2text
@@ -15,7 +14,7 @@ from rich.progress import Progress, TextColumn
 from rich.prompt import Prompt
 from rich.table import Table
 
-REQ_HEADERS = {"user-agent": "itch-jam-bot/0.0.1"}
+REQ_HEADERS = {"user-agent": "itch-jam-bot/0.9.0"}
 
 
 class GameType(Enum):
@@ -74,7 +73,7 @@ class ItchJam:
 
         if ItchJam.db_conn is None:
             try:
-                ItchJam.db_conn = sqlite3.connect("test.db")
+                ItchJam.db_conn = sqlite3.connect("itch_jam.db")
             except Exception as e:
                 print(f"ERROR: {e}")
 
@@ -213,7 +212,13 @@ class ItchJam:
 
     def delete(self):
         if self.crawled:
-            self.table.delete(jam_id=self.id)
+            self.db_conn.execute(
+                """
+                DELETE FROM itch_jams WHERE jam_id = :jam_id
+                """,
+                {"jam_id": self.id},
+            )
+            self.db_conn.commit()
             self.crawled = False
 
     def url(self):
@@ -227,13 +232,12 @@ class ItchJamList:
 
     db_conn = None
 
-    def __init__(self, database="sqlite:///itch_jams.sqlite"):
+    def __init__(self):
         self._list = []
-        self._database_name = database
 
         if ItchJamList.db_conn is None:
             try:
-                ItchJamList.db_conn = sqlite3.connect("test.db")
+                ItchJamList.db_conn = sqlite3.connect("itch_jam.db")
             except Exception as e:
                 print(f"ERROR: {e}")
 
@@ -373,7 +377,7 @@ def cli():
 
 @cli.command()
 @cloup.option("--force", is_flag=True, default=False)
-@cloup.argument("id", nargs=-1)
+@cloup.argument("id", nargs=-1, help="One or more jam IDs to crawl")
 def crawl(force, id):
     """crawl upcoming game jams
 
@@ -405,7 +409,7 @@ def crawl(force, id):
 )
 @cloup.option("--old", is_flag=True, default=False, help="Include old jams")
 def list(type, owner, id, old):
-    """list tabletop jams (optionally search for by type, owner ID, or jam ID)"""
+    """list tabletop jams (optionally search by type, owner ID, or jam ID)"""
 
     jam_list = ItchJamList()
 
@@ -441,9 +445,9 @@ def list(type, owner, id, old):
 
 
 @cli.command()
-@cloup.argument("id", nargs=-1)
+@cloup.argument("id", nargs=-1, help="One or more jam IDs to show")
 def show(id):
-    """show detailed information for a jam"""
+    """show detailed information for jams"""
 
     for i in id:
         jam = ItchJam()
@@ -456,10 +460,10 @@ def show(id):
 
 
 @cli.command()
-@cloup.argument("id", nargs=-1)
+@cloup.argument("id", nargs=-1, help="One or more jam IDs to classify")
 @cloup.option("--type", type=cloup.Choice(["tabletop", "digital", "unclassified"]))
 def classify(id, type):
-    """classify a jam as tabletop, digital, or unclassified"""
+    """classify jams as tabletop, digital, or unclassified"""
 
     if not id:
         id = []
@@ -487,9 +491,9 @@ def classify(id, type):
 
 
 @cli.command()
-@cloup.argument("id", nargs=-1)
+@cloup.argument("id", nargs=-1, help="One or more jam IDs to delete")
 def delete(id):
-    """delete a jam from the database"""
+    """delete jams from the database"""
 
     for id in id:
         jam = ItchJam()
