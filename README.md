@@ -2,6 +2,7 @@
 
 1. Pull down the git repo
 2. `pip install .`
+3. `sqlite3 itch_jam.db < itch_jam.sql`
 
 # Usage
 
