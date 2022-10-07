@@ -1,3 +1,8 @@
+# Installation
+
+1. Pull down the git repo
+2. `pip install .`
+
 # Usage
 
 ```
