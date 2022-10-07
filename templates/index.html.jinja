@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Physical Game Jams</title>
+</head>
+<body>
+    <h1>Physical Game Jams</h1>
+    
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Start Date</th>
+            <th>Due Date</th>
+            <th>Host(s)</th>
+            <th>Hashtag</th>
+        </tr>
+        {%- for jam in jams %}
+        <tr>
+            <td><a href="{{ jam.url() }}">{{ jam.name }}</a></td>
+            <td>{{ jam.start.strftime("%B %d, %Y at %I:%M %p") }}</td>
+            <td>{{ jam.end().strftime("%B %d, %Y at %I:%M %p") }}</td>
+            <td>{%- for owner in jam.owners -%}
+                <a href="https://{{ owner }}.itch.io/">{{ jam.owners[owner] }}</a>
+                {{- ", " if not loop.last else "" -}}
+                {%- endfor -%}</td>
+            <td>{%- if jam.hashtag -%}
+                    <a href="https://twitter.com/hashtag/{{ jam.hashtag[1:] }}">{{ jam.hashtag }}</a>
+                {%- else -%}
+                    &nbsp;
+                {%- endif -%}</td>
+        </tr>
+        {%- endfor %}
+    </table>
+</body>
+</html>

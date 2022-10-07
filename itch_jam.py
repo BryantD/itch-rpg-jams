@@ -8,6 +8,7 @@ import cloup
 import html2text
 import requests
 from bs4 import BeautifulSoup
+from jinja2 import Environment, PackageLoader, select_autoescape
 from rich.console import Console
 from rich.progress import Progress, TextColumn
 from rich.prompt import Prompt
@@ -77,6 +78,9 @@ class ItchJam:
                 print(f"ERROR: {e}")
 
         self.db_conn = ItchJam.db_conn
+
+        if not self.name:
+            self.load(id=self.id)
 
         if type(self.start) == str:
             self.start = datetime.fromisoformat(f"{self.start}+00:00")
@@ -310,9 +314,7 @@ class ItchJamList:
                 > datetime.now()
                 or past_jams
             ):
-                jam_load = ItchJam()
-                jam_load.load(id=jam[0])
-                self._list.append(jam_load)
+                self._list.append(ItchJam(id=jam[0]))
 
     def _crawl_page(self, page=1):
         base_url = "https://itch.io/jams/starting-this-month"
@@ -438,8 +440,7 @@ def show(id):
     """show detailed information for jams"""
 
     for i in id:
-        jam = ItchJam()
-        jam.load(id=i)
+        jam = ItchJam(id=i)
         if jam.crawled:
             print(jam)
 
@@ -485,3 +486,14 @@ def delete(id):
             jam.delete()
         else:
             print(f"{id} not found")
+
+
+@cli.command()
+def jinja():
+    """print HTML"""
+
+    jams = [ItchJam(id="cosmic-horrors-jam"), ItchJam(id="game-off-2022")]
+
+    env = Environment(loader=PackageLoader("itch_jam"), autoescape=select_autoescape())
+    template = env.get_template("index.html.jinja")
+    print(template.render(jams=jams))
