@@ -8,6 +8,7 @@ import cloup
 import html2text
 import requests
 from bs4 import BeautifulSoup
+from jinja2 import Environment, PackageLoader, select_autoescape
 from rich.console import Console
 from rich.progress import Progress, TextColumn
 from rich.prompt import Prompt
@@ -77,6 +78,9 @@ class ItchJam:
                 print(f"ERROR: {e}")
 
         self.db_conn = ItchJam.db_conn
+
+        if not self.name:
+            self.load(id=self.id)
 
         if type(self.start) == str:
             self.start = datetime.fromisoformat(f"{self.start}+00:00")
@@ -269,6 +273,9 @@ class ItchJamList:
         else:
             raise TypeError("data must be a list")
 
+    def sort(self):
+        self._list.sort(key=lambda jam: jam.start)
+
     def save(self):
         for jam in self.list:
             jam.save()
@@ -310,9 +317,7 @@ class ItchJamList:
                 > datetime.now()
                 or past_jams
             ):
-                jam_load = ItchJam()
-                jam_load.load(id=jam[0])
-                self._list.append(jam_load)
+                self._list.append(ItchJam(id=jam[0]))
 
     def _crawl_page(self, page=1):
         base_url = "https://itch.io/jams/starting-this-month"
@@ -399,7 +404,8 @@ def crawl(force, id):
     cloup.option("--id"),
 )
 @cloup.option("--old", is_flag=True, default=False, help="Include old jams")
-def list(type, owner, id, old):
+@cloup.option("--html", is_flag=True, default=False, help="HTML output")
+def list(type, owner, id, old, html):
     """list tabletop jams (optionally search by type, owner ID, or jam ID)"""
 
     jam_list = ItchJamList()
@@ -418,18 +424,26 @@ def list(type, owner, id, old):
         query = f"Jam Owner = {owner}"
 
     if len(jam_list) > 0:
-        console = Console()
-        table = Table(title=f"{query}")
+        jam_list.sort()
+        if html:
+            env = Environment(
+                loader=PackageLoader("itch_jam"), autoescape=select_autoescape()
+            )
+            template = env.get_template("index.html.jinja")
+            print(template.render(jams=jam_list))
+        else:
+            console = Console()
+            table = Table(title=f"{query}")
 
-        table.add_column("Name")
-        table.add_column("ID")
-        table.add_column("URL", no_wrap=True)
-        table.add_column("Owner(s)")
+            table.add_column("Name")
+            table.add_column("ID")
+            table.add_column("URL", no_wrap=True)
+            table.add_column("Owner(s)")
 
-        for jam in jam_list:
-            table.add_row(jam.name, jam.id, jam.url(), jam.owner_ids())
+            for jam in jam_list:
+                table.add_row(jam.name, jam.id, jam.url(), jam.owner_ids())
 
-        console.print(table)
+            console.print(table)
 
 
 @cli.command()
@@ -438,8 +452,7 @@ def show(id):
     """show detailed information for jams"""
 
     for i in id:
-        jam = ItchJam()
-        jam.load(id=i)
+        jam = ItchJam(id=i)
         if jam.crawled:
             print(jam)
 

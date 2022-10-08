@@ -8,6 +8,7 @@ setup(
         "bs4",
         "cloup",
         "html2text",
+        "Jinja2",
         "requests",
         "rich",
     ],

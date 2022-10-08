@@ -24,6 +24,8 @@ Commands:
 
 ## classify
 
+If you don't specify a type, classification will be interactive. If you don't specify a jam, all unclassified jams will be presented for classification in order.
+
 ```
 itch-jam classify [OPTIONS] [ID]...
 
@@ -38,6 +40,10 @@ Options:
 ```
 
 ## crawl
+
+If you don't specify a jam to crawl, the upcoming jams page will be crawled.
+
+While crawling, a good faith effort to identify tabletop games is made based on keywords. The keywords currently used are towards the top of the code in the ItchJam class.
 
 ```
 Usage: itch-jam crawl [OPTIONS] [ID]...
@@ -70,6 +76,8 @@ Options:
 
 ## list
 
+By default, this lists tabletop jams.
+
 ```
 Usage: itch-jam list [OPTIONS]
 
@@ -82,6 +90,7 @@ Search options:
 
 Other options:
   --old         Include old jams
+  --html        HTML output
   --help        Show this message and exit.
 ```
 
