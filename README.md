@@ -82,6 +82,7 @@ Search options:
 
 Other options:
   --old         Include old jams
+  --html        HTML output
   --help        Show this message and exit.
 ```
 
