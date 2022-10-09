@@ -1,3 +1,7 @@
+# Intro
+
+I wrote this cause I wanted it! I am maintaining an instance of the resulting list at https://physicalgamejams.com/.
+
 # Installation
 
 1. Pull down the git repo
