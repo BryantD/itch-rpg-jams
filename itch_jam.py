@@ -30,6 +30,7 @@ class ItchJam:
     db_conn = None
 
     _tabletop_keywords = [
+        "analogici",
         "analog game",
         "analogue game",
         "belonging outside belonging",
@@ -320,7 +321,7 @@ class ItchJamList:
                 self._list.append(ItchJam(id=jam[0]))
 
     def _crawl_page(self, page=1):
-        base_url = "https://itch.io/jams/starting-this-month"
+        base_url = "https://itch.io/jams/upcoming"
         req_payload = {"page": page}
 
         jams_flag = False
