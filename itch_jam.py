@@ -366,6 +366,9 @@ class ItchJamList:
                 if force_crawl or jam.id not in jam_ids:
                     jam.crawl()
                     jam.auto_classify()
+                    progress.console.print(
+                        f"{jam.name} <{jam.url()}>: {jam.gametype.name.lower()}"
+                    )
                     jam.save()
                 progress.update(crawl_task, advance=1, jam_name=jam.name)
 
