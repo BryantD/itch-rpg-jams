@@ -275,7 +275,7 @@ class ItchJamList:
             raise TypeError("data must be a list")
 
     def sort(self):
-        self._list.sort(key=lambda jam: jam.start)
+        self._list.sort(key=lambda jam: jam.end())
 
     def save(self):
         for jam in self.list:
@@ -366,8 +366,15 @@ class ItchJamList:
                 if force_crawl or jam.id not in jam_ids:
                     jam.crawl()
                     jam.auto_classify()
+                    match jam.gametype:
+                        case GameType.UNCLASSIFIED:
+                            emoji = ""
+                        case GameType.TABLETOP:
+                            emoji = ":game_die: "
+                        case GameType.DIGITAL:
+                            emoji = ""
                     progress.console.print(
-                        f"{jam.name} <{jam.url()}>: {jam.gametype.name.lower()}"
+                        f"{emoji}{jam.name} <{jam.url()}>: {jam.gametype.name.lower()}"
                     )
                     jam.save()
                 progress.update(crawl_task, advance=1, jam_name=jam.name)
