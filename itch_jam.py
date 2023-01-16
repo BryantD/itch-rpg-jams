@@ -320,8 +320,11 @@ class ItchJamList:
             ):
                 self._list.append(ItchJam(id=jam[0]))
 
-    def _crawl_page(self, page=1):
-        base_url = "https://itch.io/jams/upcoming"
+    def _crawl_page(self, page=1, list="upcoming"):
+        if list == "upcoming":
+            base_url = "https://itch.io/jams/upcoming"
+        elif list == "in-progress":
+            base_url = "https://itch.io/jams/in-progress"
         req_payload = {"page": page}
 
         jams_flag = False
@@ -353,7 +356,12 @@ class ItchJamList:
         jam_ids = [item[0] for item in cur.fetchall()]
         cur.close()
 
-        while self._crawl_page(page):
+        page = 1
+        while self._crawl_page(page, list="in-progress"):
+            page = page + 1
+
+        page = 1
+        while self._crawl_page(page, list="upcoming"):
             page = page + 1
 
         with Progress(
