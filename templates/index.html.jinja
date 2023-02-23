@@ -43,10 +43,10 @@
                 {%- for jam in jams %}
                     <tr>
                         <td><a href="{{ jam.url() }}">{{ jam.name }}</a></td>
-                        <td data-sort="{{ jam.start.strftime("%Y-%m-%d %H:%M") }}">
+                        <td data-sort="{{ jam.start.strftime("%Y%m%d%H%M") }}">
                             {{ jam.start.strftime("%B %d, %Y at %I:%M %p") }}
                         </td>
-                        <td data-sort="{{ jam.end().strftime("%Y-%m-%d %H:%M") }}">
+                        <td data-sort="{{ jam.end().strftime("%Y%m%d%H%M") }}">
                             {{ jam.end().strftime("%B %d, %Y at %I:%M %p") }}
                         </td>
                         <td>{%- for owner in jam.owners -%}
