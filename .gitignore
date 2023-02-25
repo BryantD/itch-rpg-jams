@@ -7,3 +7,4 @@ build/
 *.db-shm
 *.db-wal
 index.html
+Taskfile.yaml
