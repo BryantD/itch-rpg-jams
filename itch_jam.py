@@ -5,11 +5,13 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 import cloup
+import deepl
 import html2text
 import requests
 from bs4 import BeautifulSoup
 from click_extra import config_option
 from jinja2 import Environment, PackageLoader, select_autoescape
+from lingua import Language, LanguageDetectorBuilder
 from rich.console import Console
 from rich.progress import Progress, TextColumn
 from rich.prompt import Prompt
@@ -234,7 +236,6 @@ class ItchJam:
 
 
 class ItchJamList:
-
     db_conn = None
 
     def __init__(self):
@@ -395,8 +396,61 @@ class ItchJamList:
 @cloup.pass_context
 def itch_jam(ctx, deepl_api_key):
     """Tool for generating lists of itch.io game jams"""
+
     ctx.ensure_object(dict)
-    ctx.obj["deepl_api_key"] = deepl_api_key
+    translator = deepl.Translator(deepl_api_key)
+    ctx.obj["translator"] = translator
+
+    languages = [
+        Language.SPANISH,
+        Language.PORTUGUESE,
+        Language.CATALAN,
+        Language.TAGALOG,
+        Language.ENGLISH,
+        Language.ALBANIAN,
+        Language.ITALIAN,
+        Language.FRENCH,
+        Language.ROMANIAN,
+        Language.SLOVAK,
+        Language.CZECH,
+        Language.DUTCH,
+        Language.CROATIAN,
+        Language.HUNGARIAN,
+        Language.AFRIKAANS,
+        Language.ARABIC,
+        Language.ARMENIAN,
+        Language.BENGALI,
+        Language.BOSNIAN,
+        Language.BULGARIAN,
+        Language.CHINESE,
+        Language.DANISH,
+        Language.ESTONIAN,
+        Language.FINNISH,
+        Language.GERMAN,
+        Language.GREEK,
+        Language.HEBREW,
+        Language.HINDI,
+        Language.ICELANDIC,
+        Language.INDONESIAN,
+        Language.JAPANESE,
+        Language.KOREAN,
+        Language.LATVIAN,
+        Language.LITHUANIAN,
+        Language.PERSIAN,
+        Language.POLISH,
+        Language.PUNJABI,
+        Language.RUSSIAN,
+        Language.SERBIAN,
+        Language.SLOVENE,
+        Language.SWEDISH,
+        Language.TAMIL,
+        Language.THAI,
+        Language.TURKISH,
+        Language.UKRAINIAN,
+        Language.VIETNAMESE,
+    ]
+    detector = LanguageDetectorBuilder.from_languages(*languages).build()
+    ctx.obj["detector"] = detector
 
 
 @itch_jam.command()
@@ -482,7 +536,9 @@ def show(ctx, id):
         jam = ItchJam(id=i)
         if jam.crawled:
             print(jam)
-    print(ctx.obj["deepl_api_key"])
+
+        language_detect = ctx.obj["detector"].detect_language_of(jam.description)
+        print(language_detect)
 
 
 @itch_jam.command()

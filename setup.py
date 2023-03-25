@@ -11,7 +11,7 @@ setup(
         "deepl",
         "html2text",
         "Jinja2",
-        "lingua",
+        "lingua-language-detector",
         "requests",
         "rich",
     ],
