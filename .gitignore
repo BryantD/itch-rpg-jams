@@ -8,3 +8,4 @@ build/
 *.db-wal
 index.html
 Taskfile.yaml
+itch_jam.toml

@@ -8,6 +8,7 @@ import cloup
 import html2text
 import requests
 from bs4 import BeautifulSoup
+from click_extra import config_option
 from jinja2 import Environment, PackageLoader, select_autoescape
 from rich.console import Console
 from rich.progress import Progress, TextColumn
@@ -389,11 +390,16 @@ class ItchJamList:
 
 
 @cloup.group()
-def cli():
+@cloup.option("--deepl-api-key")
+@config_option(default="./itch_jam.toml")
+@cloup.pass_context
+def itch_jam(ctx, deepl_api_key):
     """Tool for generating lists of itch.io game jams"""
+    ctx.ensure_object(dict)
+    ctx.obj["deepl_api_key"] = deepl_api_key
 
 
-@cli.command()
+@itch_jam.command()
 @cloup.option("--force", is_flag=True, default=False)
 @cloup.argument("id", nargs=-1, help="One or more jam IDs to crawl")
 def crawl(force, id):
@@ -401,6 +407,7 @@ def crawl(force, id):
 
     optionally force recrawls or crawl specific URLs
     """
+
     if id:
         for i in id:
             jam = ItchJam(id=i)
@@ -412,7 +419,7 @@ def crawl(force, id):
         jam_list.crawl(force_crawl=force)
 
 
-@cli.command()
+@itch_jam.command()
 @cloup.option_group(
     "Search options",
     cloup.option(
@@ -465,21 +472,24 @@ def list(type, owner, id, old, html):
             console.print(table)
 
 
-@cli.command()
+@itch_jam.command()
 @cloup.argument("id", nargs=-1, help="One or more jam IDs to show")
-def show(id):
+@cloup.pass_context
+def show(ctx, id):
     """show detailed information for jams"""
 
     for i in id:
         jam = ItchJam(id=i)
         if jam.crawled:
             print(jam)
+    print(ctx.obj["deepl_api_key"])
 
 
-@cli.command()
+@itch_jam.command()
 @cloup.argument("id", nargs=-1, help="One or more jam IDs to classify")
 @cloup.option("--type", type=cloup.Choice(["tabletop", "digital", "unclassified"]))
-def classify(id, type):
+@cloup.pass_context
+def classify(ctx, id, type):
     """classify jams as tabletop, digital, or unclassified"""
 
     if not id:
@@ -504,7 +514,7 @@ def classify(id, type):
         jam.save()
 
 
-@cli.command()
+@itch_jam.command()
 @cloup.argument("id", nargs=-1, help="One or more jam IDs to delete")
 def delete(id):
     """delete jams from the database"""
