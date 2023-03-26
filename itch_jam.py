@@ -55,6 +55,7 @@ class ItchJam:
 
     def __init__(
         self,
+        ctx=None,
         id=None,
         name=None,
         owners={},
@@ -66,6 +67,7 @@ class ItchJam:
         crawled=False,
     ):
         self.id = id
+        self.ctx = ctx
         self.name = name
         self.owners = owners
         self.start = start
@@ -96,7 +98,18 @@ class ItchJam:
         h2t.ignore_links = True
         h2t.ignore_images = True
         h2t.strong_mark = "*"
-        description = re.sub(r"(\n\s*)+\n+", "\n\n", h2t.handle(self.description))
+
+        language_detect = self.ctx.obj["detector"].detect_language_of(self.description)
+        if language_detect.value != "English":
+            desc = str(
+                self.ctx.obj["translator"].translate_text(
+                    self.description, target_lang="EN-US"
+                )
+            )
+        else:
+            desc = self.description
+
+        description = re.sub(r"(\n\s*)+\n+", "\n\n", h2t.handle(desc))
 
         jam_str = (
             f"Jam: {self.name} ({self.id})\n"
@@ -533,12 +546,9 @@ def show(ctx, id):
     """show detailed information for jams"""
 
     for i in id:
-        jam = ItchJam(id=i)
+        jam = ItchJam(id=i, ctx=ctx)
         if jam.crawled:
             print(jam)
-
-        language_detect = ctx.obj["detector"].detect_language_of(jam.description)
-        print(language_detect)
 
 
 @itch_jam.command()
@@ -556,7 +566,7 @@ def classify(ctx, id, type):
             id.append(jam.id)
 
     for i in id:
-        jam = ItchJam()
+        jam = ItchJam(ctx=ctx)
         jam.load(id=i)
         if type:
             jam.gametype = GameType[type.upper()]
