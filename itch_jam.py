@@ -5,10 +5,13 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 import cloup
+import deepl
 import html2text
 import requests
 from bs4 import BeautifulSoup
+from click_extra import config_option
 from jinja2 import Environment, PackageLoader, select_autoescape
+from lingua import Language, LanguageDetectorBuilder
 from rich.console import Console
 from rich.progress import Progress, TextColumn
 from rich.prompt import Prompt
@@ -52,6 +55,7 @@ class ItchJam:
 
     def __init__(
         self,
+        ctx=None,
         id=None,
         name=None,
         owners={},
@@ -63,6 +67,7 @@ class ItchJam:
         crawled=False,
     ):
         self.id = id
+        self.ctx = ctx
         self.name = name
         self.owners = owners
         self.start = start
@@ -93,7 +98,18 @@ class ItchJam:
         h2t.ignore_links = True
         h2t.ignore_images = True
         h2t.strong_mark = "*"
-        description = re.sub(r"(\n\s*)+\n+", "\n\n", h2t.handle(self.description))
+
+        language_detect = self.ctx.obj["detector"].detect_language_of(self.description)
+        if language_detect.value != "English":
+            desc = str(
+                self.ctx.obj["translator"].translate_text(
+                    self.description, target_lang="EN-US"
+                )
+            )
+        else:
+            desc = self.description
+
+        description = re.sub(r"(\n\s*)+\n+", "\n\n", h2t.handle(desc))
 
         jam_str = (
             f"Jam: {self.name} ({self.id})\n"
@@ -233,7 +249,6 @@ class ItchJam:
 
 
 class ItchJamList:
-
     db_conn = None
 
     def __init__(self):
@@ -389,11 +404,69 @@ class ItchJamList:
 
 
 @cloup.group()
-def cli():
+@cloup.option("--deepl-api-key")
+@config_option(default="./itch_jam.toml")
+@cloup.pass_context
+def itch_jam(ctx, deepl_api_key):
     """Tool for generating lists of itch.io game jams"""
 
+    ctx.ensure_object(dict)
+    translator = deepl.Translator(deepl_api_key)
+    ctx.obj["translator"] = translator
 
-@cli.command()
+    languages = [
+        Language.SPANISH,
+        Language.PORTUGUESE,
+        Language.CATALAN,
+        Language.TAGALOG,
+        Language.ENGLISH,
+        Language.ALBANIAN,
+        Language.ITALIAN,
+        Language.FRENCH,
+        Language.ROMANIAN,
+        Language.SLOVAK,
+        Language.CZECH,
+        Language.DUTCH,
+        Language.CROATIAN,
+        Language.HUNGARIAN,
+        Language.AFRIKAANS,
+        Language.ARABIC,
+        Language.ARMENIAN,
+        Language.BENGALI,
+        Language.BOSNIAN,
+        Language.BULGARIAN,
+        Language.CHINESE,
+        Language.DANISH,
+        Language.ESTONIAN,
+        Language.FINNISH,
+        Language.GERMAN,
+        Language.GREEK,
+        Language.HEBREW,
+        Language.HINDI,
+        Language.ICELANDIC,
+        Language.INDONESIAN,
+        Language.JAPANESE,
+        Language.KOREAN,
+        Language.LATVIAN,
+        Language.LITHUANIAN,
+        Language.PERSIAN,
+        Language.POLISH,
+        Language.PUNJABI,
+        Language.RUSSIAN,
+        Language.SERBIAN,
+        Language.SLOVENE,
+        Language.SWEDISH,
+        Language.TAMIL,
+        Language.THAI,
+        Language.TURKISH,
+        Language.UKRAINIAN,
+        Language.VIETNAMESE,
+    ]
+    detector = LanguageDetectorBuilder.from_languages(*languages).build()
+    ctx.obj["detector"] = detector
+
+
+@itch_jam.command()
 @cloup.option("--force", is_flag=True, default=False)
 @cloup.argument("id", nargs=-1, help="One or more jam IDs to crawl")
 def crawl(force, id):
@@ -401,6 +474,7 @@ def crawl(force, id):
 
     optionally force recrawls or crawl specific URLs
     """
+
     if id:
         for i in id:
             jam = ItchJam(id=i)
@@ -412,7 +486,7 @@ def crawl(force, id):
         jam_list.crawl(force_crawl=force)
 
 
-@cli.command()
+@itch_jam.command()
 @cloup.option_group(
     "Search options",
     cloup.option(
@@ -465,21 +539,23 @@ def list(type, owner, id, old, html):
             console.print(table)
 
 
-@cli.command()
+@itch_jam.command()
 @cloup.argument("id", nargs=-1, help="One or more jam IDs to show")
-def show(id):
+@cloup.pass_context
+def show(ctx, id):
     """show detailed information for jams"""
 
     for i in id:
-        jam = ItchJam(id=i)
+        jam = ItchJam(id=i, ctx=ctx)
         if jam.crawled:
             print(jam)
 
 
-@cli.command()
+@itch_jam.command()
 @cloup.argument("id", nargs=-1, help="One or more jam IDs to classify")
 @cloup.option("--type", type=cloup.Choice(["tabletop", "digital", "unclassified"]))
-def classify(id, type):
+@cloup.pass_context
+def classify(ctx, id, type):
     """classify jams as tabletop, digital, or unclassified"""
 
     if not id:
@@ -490,7 +566,7 @@ def classify(id, type):
             id.append(jam.id)
 
     for i in id:
-        jam = ItchJam()
+        jam = ItchJam(ctx=ctx)
         jam.load(id=i)
         if type:
             jam.gametype = GameType[type.upper()]
@@ -504,7 +580,7 @@ def classify(id, type):
         jam.save()
 
 
-@cli.command()
+@itch_jam.command()
 @cloup.argument("id", nargs=-1, help="One or more jam IDs to delete")
 def delete(id):
     """delete jams from the database"""
