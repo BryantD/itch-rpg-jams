@@ -10,3 +10,4 @@ index.html
 Taskfile.yaml
 itch_jam.toml
 venv/
+.vscode/settings.json
