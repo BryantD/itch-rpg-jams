@@ -100,7 +100,8 @@ class ItchJam:
         h2t.strong_mark = "*"
 
         language_detect = self.ctx.obj["detector"].detect_language_of(self.description)
-        if language_detect.value != "English":
+        if language_detect.name != "ENGLISH":
+            print(f"Translating from {language_detect.name}")
             desc = str(
                 self.ctx.obj["translator"].translate_text(
                     self.description, target_lang="EN-US"
