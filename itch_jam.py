@@ -297,7 +297,14 @@ class ItchJamList:
         for jam in self.list:
             jam.save()
 
-    def load(self, past_jams=False, owner_id=None, gametype=None, jam_id=None):
+    def load(
+        self,
+        past_jams=False,
+        current_jams=True,
+        owner_id=None,
+        gametype=None,
+        jam_id=None,
+    ):
         if owner_id:
             jam_search = self.db_conn.execute(
                 """
@@ -328,11 +335,15 @@ class ItchJamList:
 
         for jam in jam_search:
             jam_json = json.loads(jam[1])
+            jam_json["jam_end"] = jam_json["jam_start"] + (
+                jam_json["jam_duration"] * 86400
+            )
             if (
-                datetime.utcfromtimestamp(jam_json["jam_start"])
-                + timedelta(days=jam_json["jam_duration"])
-                > datetime.now()
-                or past_jams
+                current_jams
+                and datetime.utcfromtimestamp(jam_json["jam_end"]) > datetime.now()
+            ) or (
+                past_jams
+                and datetime.utcfromtimestamp(jam_json["jam_end"]) < datetime.now()
             ):
                 self._list.append(ItchJam(id=jam[0]))
 
@@ -498,8 +509,9 @@ def crawl(force, id):
     cloup.option("--id"),
 )
 @cloup.option("--old", is_flag=True, default=False, help="Include old jams")
+@cloup.option("--all", is_flag=True, default=False, help="Include all jams")
 @cloup.option("--html", is_flag=True, default=False, help="HTML output")
-def list(type, owner, id, old, html):
+def list(type, owner, id, old, all, html):
     """list tabletop jams (optionally search by type, owner ID, or jam ID)"""
 
     jam_list = ItchJamList()
@@ -507,14 +519,23 @@ def list(type, owner, id, old, html):
     if not (type or owner or id):
         type = "tabletop"
 
+    if old:
+        old = True
+        new = False
+    elif all:
+        old = True
+        new = True
+    else:
+        new = True
+
     if type:
-        jam_list.load(gametype=type, past_jams=old)
+        jam_list.load(gametype=type, past_jams=old, current_jams=new)
         query = f"Jam Type = {type}"
     elif id:
-        jam_list.load(jam_id=id, past_jams=old)
+        jam_list.load(jam_id=id, past_jams=old, current_jams=new)
         query = f"Jam ID = {id}"
     elif owner:
-        jam_list.load(owner_id=owner, past_jams=old)
+        jam_list.load(owner_id=owner, past_jams=old, current_jams=new)
         query = f"Jam Owner = {owner}"
 
     if len(jam_list) > 0:
