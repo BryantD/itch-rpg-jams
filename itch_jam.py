@@ -545,7 +545,7 @@ def list(type, owner, id, old, all, html):
                 loader=PackageLoader("itch_jam"), autoescape=select_autoescape()
             )
             template = env.get_template("index.html.jinja")
-            print(template.render(jams=jam_list))
+            print(template.render(jams=jam_list, date=datetime.now()))
         else:
             console = Console()
             table = Table(title=f"{query}")
