@@ -1,6 +1,6 @@
 {% extends "base.html.jinja" %}
 {% block title %}Physical Game Jams{% endblock %}
-{% block jamtable %}
+{% block jam_table_head %}
         <div class="row" role="navigation">
             <ul class="nav nav-tabs">
                 <li class="nav-item">
@@ -12,39 +12,7 @@
                 <li class="nav-item">
             </ul>
         </div>
-        <div class="row">
-            <table class="table table-striped sortable asc">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Start Date</th>
-                        <th id="end-date">End Date</th>
-                        <th>Host(s)</th>
-                        <th>Hashtag</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {%- for jam in jams %}
-                    <tr>
-                        <td><a href="{{ jam.url() }}">{{ jam.name }}</a></td>
-                        <td data-sort="{{ jam.start.strftime("%Y%m%d%H%M") }}">
-                            {{ jam.start.strftime("%B %d, %Y at %I:%M %p") }}
-                        </td>
-                        <td data-sort="{{ jam.end().strftime("%Y%m%d%H%M") }}">
-                            {{ jam.end().strftime("%B %d, %Y at %I:%M %p") }}
-                        </td>
-                        <td>{%- for owner in jam.owners -%}
-                            <a href="https://{{ owner }}.itch.io/">{{ jam.owners[owner] }}</a>
-                            {{- ", " if not loop.last else "" -}}
-                            {%- endfor -%}</td>
-                        <td>{%- if jam.hashtag -%}
-                                <a href="https://twitter.com/hashtag/{{ jam.hashtag[1:] }}">{{ jam.hashtag }}</a>
-                            {%- else -%}
-                                &nbsp;
-                            {%- endif -%}</td>
-                    </tr>
-                {%- endfor %}
-                </tbody>
-            </table>
-        </div>
+{% endblock %}
+
+{% block jam_table_foot %}
 {% endblock %}
