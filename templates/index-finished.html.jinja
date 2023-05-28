@@ -1,0 +1,33 @@
+{% extends "base.html.jinja" %}
+{% block title %}Physical Game Jams{% endblock %}
+{% block jam_table_head %}
+        <div class="row" role="navigation">
+            <ul class="nav nav-tabs">
+                <li class="nav-item">
+                     <a class="nav-link" href="index.html">Active</a>
+                 </li>
+                <li class="nav-item">
+                    <a class="nav-link active" aria-current="page" href="index-finished-1.html">Finished</a>
+                </li>
+                <li class="nav-item">
+            </ul>
+        </div>
+{% endblock %}
+
+{% block jam_table_foot %}
+        <nav aria-label="Page navigation">
+            <ul class="pagination">
+            {% for page_num in range(1, pages + 1) %}
+                {% if page_num == current_page %}
+                    <li class="page-item active" aria-current="page">
+                        <a class="page-link" href="#">{{ page_num }}</a>
+                    </li>
+                {% else %}
+                    <li class="page-item">
+                        <a class="page-link" href="index-finished-{{ page_num }}.html">{{ page_num }}</a>
+                    </li>
+                {% endif %}
+            {% endfor %}
+            </ul>
+        </nav>
+{% endblock %}

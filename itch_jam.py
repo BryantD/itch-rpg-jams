@@ -3,6 +3,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta
 from enum import Enum
+from math import ceil
 
 import cloup
 import deepl
@@ -297,7 +298,14 @@ class ItchJamList:
         for jam in self.list:
             jam.save()
 
-    def load(self, past_jams=False, owner_id=None, gametype=None, jam_id=None):
+    def load(
+        self,
+        past_jams=False,
+        current_jams=True,
+        owner_id=None,
+        gametype=None,
+        jam_id=None,
+    ):
         if owner_id:
             jam_search = self.db_conn.execute(
                 """
@@ -328,11 +336,15 @@ class ItchJamList:
 
         for jam in jam_search:
             jam_json = json.loads(jam[1])
+            jam_json["jam_end"] = jam_json["jam_start"] + (
+                jam_json["jam_duration"] * 86400
+            )
             if (
-                datetime.utcfromtimestamp(jam_json["jam_start"])
-                + timedelta(days=jam_json["jam_duration"])
-                > datetime.now()
-                or past_jams
+                current_jams
+                and datetime.utcfromtimestamp(jam_json["jam_end"]) > datetime.now()
+            ) or (
+                past_jams
+                and datetime.utcfromtimestamp(jam_json["jam_end"]) < datetime.now()
             ):
                 self._list.append(ItchJam(id=jam[0]))
 
@@ -498,8 +510,9 @@ def crawl(force, id):
     cloup.option("--id"),
 )
 @cloup.option("--old", is_flag=True, default=False, help="Include old jams")
+@cloup.option("--all", is_flag=True, default=False, help="Include all jams")
 @cloup.option("--html", is_flag=True, default=False, help="HTML output")
-def list(type, owner, id, old, html):
+def list(type, owner, id, old, all, html):
     """list tabletop jams (optionally search by type, owner ID, or jam ID)"""
 
     jam_list = ItchJamList()
@@ -507,14 +520,23 @@ def list(type, owner, id, old, html):
     if not (type or owner or id):
         type = "tabletop"
 
+    if old:
+        old = True
+        new = False
+    elif all:
+        old = True
+        new = True
+    else:
+        new = True
+
     if type:
-        jam_list.load(gametype=type, past_jams=old)
+        jam_list.load(gametype=type, past_jams=old, current_jams=new)
         query = f"Jam Type = {type}"
     elif id:
-        jam_list.load(jam_id=id, past_jams=old)
+        jam_list.load(jam_id=id, past_jams=old, current_jams=new)
         query = f"Jam ID = {id}"
     elif owner:
-        jam_list.load(owner_id=owner, past_jams=old)
+        jam_list.load(owner_id=owner, past_jams=old, current_jams=new)
         query = f"Jam Owner = {owner}"
 
     if len(jam_list) > 0:
@@ -523,8 +545,44 @@ def list(type, owner, id, old, html):
             env = Environment(
                 loader=PackageLoader("itch_jam"), autoescape=select_autoescape()
             )
-            template = env.get_template("index.html.jinja")
-            print(template.render(jams=jam_list))
+            # split lists into current and finished
+            [jam_list_current, jam_list_finished] = [[], []]
+            for jam in jam_list:
+                if jam.start + timedelta(days=jam.duration) > datetime.now():
+                    jam_list_current.append(jam)
+                else:
+                    jam_list_finished.append(jam)
+            if new:
+                template = env.get_template("index.html.jinja")
+                rendered_template = template.render(
+                    jams=jam_list_current, date=datetime.now()
+                )
+                with open("output/index.html", "w") as static_file:
+                    static_file.write(rendered_template)
+            if old:
+                items_per_page = 50  # TODO: make this configurable
+
+                pages = ceil(len(jam_list_finished) / items_per_page)
+
+                for page in range(1, pages + 1):
+                    start = (page - 1) * items_per_page
+                    end = start + items_per_page
+                    page_data = jam_list_finished[start:end]
+
+                    # Render the template for this page
+                    template = env.get_template("index-finished.html.jinja")
+
+                    rendered_template = template.render(
+                        jams=page_data,
+                        current_page=page,
+                        pages=pages,
+                        date=datetime.now(),
+                    )
+
+                    # Save the rendered template to a file
+                    with open(f"output/index-finished-{page}.html", "w") as static_file:
+                        static_file.write(rendered_template)
+
         else:
             console = Console()
             table = Table(title=f"{query}")

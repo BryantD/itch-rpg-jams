@@ -9,6 +9,7 @@ build/
 index.html
 Taskfile.yaml
 itch_jam.toml
-venv/
+.venv/
 .vscode/settings.json
 digital-game-jam-name-keywords
+output/
