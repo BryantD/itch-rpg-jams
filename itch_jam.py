@@ -544,8 +544,19 @@ def list(type, owner, id, old, all, html):
             env = Environment(
                 loader=PackageLoader("itch_jam"), autoescape=select_autoescape()
             )
-            template = env.get_template("index.html.jinja")
-            print(template.render(jams=jam_list, date=datetime.now()))
+            # split lists into current and finished
+            [jam_list_current, jam_list_finished] = [[], []]
+            for jam in jam_list:
+                if jam.start + timedelta(days=jam.duration) > datetime.now():
+                    jam_list_current.append(jam)
+                else:
+                    jam_list_finished.append(jam)
+            if new:
+                template = env.get_template("index.html.jinja")
+                print(template.render(jams=jam_list_current, date=datetime.now()))
+            if old:
+                template = env.get_template("index-finished.html.jinja")
+                print(template.render(jams=jam_list_finished, date=datetime.now()))
         else:
             console = Console()
             table = Table(title=f"{query}")
