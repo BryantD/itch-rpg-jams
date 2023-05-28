@@ -12,3 +12,4 @@ itch_jam.toml
 .venv/
 .vscode/settings.json
 digital-game-jam-name-keywords
+output/

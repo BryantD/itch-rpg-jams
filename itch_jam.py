@@ -3,6 +3,7 @@ import re
 import sqlite3
 from datetime import datetime, timedelta
 from enum import Enum
+from math import ceil
 
 import cloup
 import deepl
@@ -553,10 +554,35 @@ def list(type, owner, id, old, all, html):
                     jam_list_finished.append(jam)
             if new:
                 template = env.get_template("index.html.jinja")
-                print(template.render(jams=jam_list_current, date=datetime.now()))
+                rendered_template = template.render(
+                    jams=jam_list_current, date=datetime.now()
+                )
+                with open("output/index.html", "w") as static_file:
+                    static_file.write(rendered_template)
             if old:
-                template = env.get_template("index-finished.html.jinja")
-                print(template.render(jams=jam_list_finished, date=datetime.now()))
+                items_per_page = 50  # TODO: make this configurable
+
+                pages = ceil(len(jam_list_finished) / items_per_page)
+
+                for page in range(1, pages + 1):
+                    start = (page - 1) * items_per_page
+                    end = start + items_per_page
+                    page_data = jam_list_finished[start:end]
+
+                    # Render the template for this page
+                    template = env.get_template("index-finished.html.jinja")
+
+                    rendered_template = template.render(
+                        jams=page_data,
+                        current_page=page,
+                        pages=pages,
+                        date=datetime.now(),
+                    )
+
+                    # Save the rendered template to a file
+                    with open(f"output/index-finished-{page}.html", "w") as static_file:
+                        static_file.write(rendered_template)
+
         else:
             console = Console()
             table = Table(title=f"{query}")
