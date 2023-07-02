@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="itch_jam",
-    version="1.1",
+    version="1.2",
     py_modules=["itch_jam"],
     install_requires=[
         "bs4",

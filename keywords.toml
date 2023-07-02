@@ -1,0 +1,26 @@
+tabletop_keywords = [
+        "analogici",
+        "analog game",
+        "analogue game",
+        "belonging outside belonging",
+        "fitd",
+        "gmless",
+        "megadungeon",
+        "osr",
+        "pamphlet",
+        "pbta",
+        "physical game",
+        "srd",
+        "sword dream",
+        "sworddream",
+        "system reference document",
+        "tabletop",
+        "ttrpg",
+]
+
+digital_keywords = [
+    "bitsy jam",
+    "trijam",
+    "zgd game jam",
+    "python game jam",
+]
