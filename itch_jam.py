@@ -1,6 +1,7 @@
 import json
 import re
 import sqlite3
+import tomllib
 from datetime import datetime, timedelta
 from enum import Enum
 from math import ceil
@@ -33,25 +34,6 @@ class ItchJam:
 
     db_conn = None
 
-    _tabletop_keywords = [
-        "analogici",
-        "analog game",
-        "analogue game",
-        "belonging outside belonging",
-        "fitd",
-        "gmless",
-        "megadungeon",
-        "osr",
-        "pamphlet",
-        "pbta",
-        "physical game",
-        "srd",
-        "sword dream",
-        "sworddream",
-        "system reference document",
-        "tabletop",
-        "ttrpg",
-    ]
     _itch_base_url = "https://itch.io"
 
     def __init__(
@@ -170,6 +152,9 @@ class ItchJam:
         return self.crawled
 
     def auto_classify(self):
+        with open("keywords.toml", "rb") as f:
+            keywords = tomllib.load(f)
+
         saved_jam_gametype = self.db_conn.execute(
             """
             SELECT json_each.value
@@ -181,9 +166,17 @@ class ItchJam:
         if saved_jam_gametype:
             self.gametype = GameType(saved_jam_gametype[0])
         elif any(
-            element in self.description.lower() for element in self._tabletop_keywords
+            element in self.description.lower()
+            for element in keywords["tabletop_keywords"]
         ):
             self.gametype = GameType.TABLETOP
+        elif any(
+            element in self.description.lower()
+            for element in keywords["digital_keywords"]
+        ) or any(
+            element in self.name.lower() for element in keywords["digital_keywords"]
+        ):
+            self.gametype = GameType.DIGITAL
 
         return self.gametype
 
@@ -408,7 +401,7 @@ class ItchJamList:
                         case GameType.TABLETOP:
                             emoji = ":game_die: "
                         case GameType.DIGITAL:
-                            emoji = ""
+                            emoji = ":joystick:"
                     progress.console.print(
                         f"{emoji}{jam.name} <{jam.url()}>: {jam.gametype.name.lower()}"
                     )
