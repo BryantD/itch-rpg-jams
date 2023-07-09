@@ -401,7 +401,7 @@ class ItchJamList:
                         case GameType.TABLETOP:
                             emoji = ":game_die: "
                         case GameType.DIGITAL:
-                            emoji = ""
+                            emoji = ":joystick:"
                     progress.console.print(
                         f"{emoji}{jam.name} <{jam.url()}>: {jam.gametype.name.lower()}"
                     )
