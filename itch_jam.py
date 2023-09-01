@@ -12,7 +12,7 @@ import html2text
 import requests
 from bs4 import BeautifulSoup
 from click_extra import config_option
-from jinja2 import Environment, PackageLoader, select_autoescape
+from jinja2 import Environment, select_autoescape, FileSystemLoader
 from lingua import Language, LanguageDetectorBuilder
 from rich.console import Console
 from rich.progress import Progress, TextColumn
@@ -536,7 +536,7 @@ def list(type, owner, id, old, all, html):
         jam_list.sort()
         if html:
             env = Environment(
-                loader=PackageLoader("itch_jam"), autoescape=select_autoescape()
+                loader=FileSystemLoader("templates"), autoescape=select_autoescape()
             )
             # split lists into current and finished
             [jam_list_current, jam_list_finished] = [[], []]
