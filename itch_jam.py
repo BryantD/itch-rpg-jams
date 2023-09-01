@@ -12,7 +12,7 @@ import html2text
 import requests
 from bs4 import BeautifulSoup
 from click_extra import config_option
-from jinja2 import Environment, select_autoescape, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from lingua import Language, LanguageDetectorBuilder
 from rich.console import Console
 from rich.progress import Progress, TextColumn
@@ -71,7 +71,7 @@ class ItchJam:
         if not self.name:
             self.load(id=self.id)
 
-        if type(self.start) == str:
+        if self.start is str:
             self.start = datetime.fromisoformat(f"{self.start}+00:00")
 
     def __str__(self):
@@ -258,7 +258,7 @@ class ItchJamList:
         self.db_conn = ItchJamList.db_conn
 
     def __setitem__(self, jam_number, data):
-        if type(data) == ItchJam:
+        if isinstance(data, ItchJam):
             self._list[jam_number] = data
         else:
             raise TypeError("item must be a member of class ItchJam")
@@ -270,15 +270,15 @@ class ItchJamList:
         return len(self._list)
 
     def append(self, data):
-        if type(data) == ItchJam:
+        if isinstance(data, ItchJam):
             self._list.append(data)
         else:
             raise TypeError("item must be a member of class ItchJam")
 
     def extend(self, data):
-        if type(data) == list:
+        if data is list:
             for item in data:
-                if type(data) != ItchJam:
+                if not isinstance(data, ItchJam):
                     raise TypeError("item must be a member of class ItchJam")
             self._list.extend(data)
         else:
@@ -505,7 +505,8 @@ def crawl(force, id):
 @cloup.option("--old", is_flag=True, default=False, help="Include old jams")
 @cloup.option("--all", is_flag=True, default=False, help="Include all jams")
 @cloup.option("--html", is_flag=True, default=False, help="HTML output")
-def list(type, owner, id, old, all, html):
+@cloup.argument("templates", type=cloup.Path(), nargs=-1)
+def list(templates, type, owner, id, old, all, html):
     """list tabletop jams (optionally search by type, owner ID, or jam ID)"""
 
     jam_list = ItchJamList()
@@ -535,8 +536,10 @@ def list(type, owner, id, old, all, html):
     if len(jam_list) > 0:
         jam_list.sort()
         if html:
+            if not templates:
+                templates = "./templates"
             env = Environment(
-                loader=FileSystemLoader("templates"), autoescape=select_autoescape()
+                loader=FileSystemLoader(templates), autoescape=select_autoescape()
             )
             # split lists into current and finished
             [jam_list_current, jam_list_finished] = [[], []]
