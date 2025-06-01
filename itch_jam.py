@@ -1,4 +1,3 @@
-import json
 import re
 import sqlite3
 import tomllib
@@ -133,7 +132,8 @@ class ItchJam:
                 "a", href=re.compile(r"\.itch\.io$")
             ):
                 owner_name = a_tag.get_text()
-                owner_id = a_tag["href"][8:-8]  # slurped out of the center of the URL
+                # slurped out of the center of the URL
+                owner_id = a_tag["href"][8:-8]
                 owners[owner_id] = owner_name
             self.owners = owners
 
@@ -155,74 +155,104 @@ class ItchJam:
         with open("keywords.toml", "rb") as f:
             keywords = tomllib.load(f)
 
-        saved_jam_gametype = self.db_conn.execute(
-            """
-            SELECT json_each.value
-                FROM itch_jams, json_each(itch_jams.jam_data, '$.jam_gametype')
-                WHERE jam_id = :jam_id
-            """,
-            {"jam_id": self.id},
+        # Preserve existing classification from DB if present
+        row = self.db_conn.execute(
+            "SELECT gametype FROM itch_jams WHERE jam_id = ?", (self.id,)
         ).fetchone()
-        if saved_jam_gametype:
-            self.gametype = GameType(saved_jam_gametype[0])
-        elif any(
-            element in self.description.lower()
-            for element in keywords["tabletop_keywords"]
-        ):
+        if row and row[0] is not None:
+            self.gametype = GameType(row[0])
+            return self.gametype
+
+        # Auto-detect based on keywords
+        desc_lower = (self.description or "").lower()
+        name_lower = (self.name or "").lower()
+        if any(word in desc_lower for word in keywords.get("tabletop_keywords", [])):
             self.gametype = GameType.TABLETOP
         elif any(
-            element in self.description.lower()
-            for element in keywords["digital_keywords"]
-        ) or any(
-            element in self.name.lower() for element in keywords["digital_keywords"]
-        ):
+            word in desc_lower for word in keywords.get("digital_keywords", [])
+        ) or any(word in name_lower for word in keywords.get("digital_keywords", [])):
             self.gametype = GameType.DIGITAL
+        else:
+            self.gametype = GameType.UNCLASSIFIED
 
         return self.gametype
 
     def save(self):
         cur = self.db_conn.cursor()
-        jam = dict(
-            jam_name=self.name,
-            jam_owners=self.owners,
-            jam_start=self.start.timestamp(),
-            jam_duration=self.duration,
-            jam_gametype=self.gametype.value,
-            jam_hashtag=self.hashtag,
-            jam_description=self.description,
-        )
+        # Upsert main jam record
         cur.execute(
             """
-            INSERT INTO itch_jams VALUES (:jam_id, :jam_data)
-                ON CONFLICT(jam_id) DO UPDATE SET jam_data=:jam_data
+            INSERT INTO itch_jams (
+                jam_id, name, start_ts, duration, gametype, hashtag, description
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(jam_id) DO UPDATE SET
+              name=excluded.name,
+              start_ts=excluded.start_ts,
+              duration=excluded.duration,
+              gametype=excluded.gametype,
+              hashtag=excluded.hashtag,
+              description=excluded.description
             """,
-            {"jam_id": self.id, "jam_data": json.dumps(jam)},
+            (
+                self.id,
+                self.name,
+                int(self.start.timestamp()),
+                self.duration,
+                self.gametype.value
+                if isinstance(self.gametype, GameType)
+                else self.gametype,
+                self.hashtag,
+                self.description,
+            ),
         )
-        cur.close()
+        # Replace owners for this jam
+        cur.execute("DELETE FROM jam_owners WHERE jam_id = ?", (self.id,))
+        for owner_id, owner_name in (self.owners or {}).items():
+            cur.execute(
+                "INSERT OR IGNORE INTO owners (owner_id, name) VALUES (?, ?)",
+                (owner_id, owner_name),
+            )
+            cur.execute(
+                "INSERT INTO jam_owners (jam_id, owner_id) VALUES (?, ?)",
+                (self.id, owner_id),
+            )
         self.db_conn.commit()
-
         self.crawled = True
 
     def load(self, id):
-        saved_jam = self.db_conn.execute(
+        # Load jam record from normalized tables
+        row = self.db_conn.execute(
             """
-            SELECT jam_id, jam_data FROM itch_jams WHERE jam_id = :jam_id
+            SELECT jam_id, name, start_ts, duration, gametype, hashtag, description
+              FROM itch_jams WHERE jam_id = ?
             """,
-            {"jam_id": id},
+            (id,),
         ).fetchone()
-
-        if saved_jam:
-            jam_data = json.loads(saved_jam[1])
-            self.id = saved_jam[0]
-            self.name = jam_data["jam_name"]
-            self.owners = jam_data["jam_owners"]
-            self.start = datetime.utcfromtimestamp(jam_data["jam_start"])
-            self.duration = jam_data["jam_duration"]
-            self.gametype = GameType(jam_data["jam_gametype"]).value
-            self.hashtag = jam_data["jam_hashtag"]
-            self.description = jam_data["jam_description"]
+        if row:
+            (
+                self.id,
+                self.name,
+                start_ts,
+                self.duration,
+                gametype_val,
+                self.hashtag,
+                self.description,
+            ) = row
+            self.start = datetime.utcfromtimestamp(start_ts)
+            self.gametype = gametype_val
+            # Load owners
+            owners_rows = self.db_conn.execute(
+                """
+                SELECT o.owner_id, o.name
+                  FROM owners o
+                  JOIN jam_owners jo ON o.owner_id = jo.owner_id
+                 WHERE jo.jam_id = ?
+                """,
+                (self.id,),
+            ).fetchall()
+            self.owners = {owner_id: name for owner_id, name in owners_rows}
             self.crawled = True
-
         return self
 
     def delete(self):
@@ -299,47 +329,29 @@ class ItchJamList:
         gametype=None,
         jam_id=None,
     ):
+        # Build base query of jam_ids
         if owner_id:
             jam_search = self.db_conn.execute(
-                """
-                SELECT itch_jams.jam_id, itch_jams.jam_data
-                    FROM itch_jams, json_tree(itch_jams.jam_data, "$.jam_owners")
-                    WHERE json_tree.key = :owner_id
-                """,
-                {"owner_id": owner_id},
+                "SELECT jam_id FROM jam_owners WHERE owner_id = ?", (owner_id,)
             )
         elif gametype:
+            gt_val = GameType[gametype.upper()].value
             jam_search = self.db_conn.execute(
-                """
-                SELECT itch_jams.jam_id, itch_jams.jam_data
-                    FROM itch_jams, json_each(itch_jams.jam_data, "$.jam_gametype")
-                    WHERE json_each.value = :gametype
-                """,
-                {"gametype": GameType[gametype.upper()].value},
+                "SELECT jam_id FROM itch_jams WHERE gametype = ?", (gt_val,)
             )
-        elif id:
+        elif jam_id:
             jam_search = self.db_conn.execute(
-                """
-                SELECT itch_jams.jam_id, itch_jams.jam_data
-                    FROM itch_jams
-                    WHERE jam_id = :jam_id
-                """,
-                {"jam_id": jam_id},
+                "SELECT jam_id FROM itch_jams WHERE jam_id = ?", (jam_id,)
             )
+        else:
+            jam_search = self.db_conn.execute("SELECT jam_id FROM itch_jams")
 
-        for jam in jam_search:
-            jam_json = json.loads(jam[1])
-            jam_json["jam_end"] = jam_json["jam_start"] + (
-                jam_json["jam_duration"] * 86400
-            )
-            if (
-                current_jams
-                and datetime.utcfromtimestamp(jam_json["jam_end"]) > datetime.now()
-            ) or (
-                past_jams
-                and datetime.utcfromtimestamp(jam_json["jam_end"]) < datetime.now()
-            ):
-                self._list.append(ItchJam(id=jam[0]))
+        for (jid,) in jam_search:
+            jam = ItchJam(id=jid)
+            end_dt = jam.end()
+            now = datetime.now()
+            if (current_jams and end_dt > now) or (past_jams and end_dt < now):
+                self._list.append(jam)
 
     def _crawl_page(self, page=1, list="upcoming"):
         if list == "upcoming":
