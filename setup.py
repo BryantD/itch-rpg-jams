@@ -3,7 +3,7 @@ from setuptools import setup
 setup(
     name="itch_jam",
     version="1.5",
-    py_modules=["itch_jam"],
+    py_modules=["itch_jam", "itch_jam_lib"],
     install_requires=[
         "bs4",
         "click-extra",
