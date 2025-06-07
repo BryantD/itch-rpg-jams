@@ -144,6 +144,7 @@ def list(templates, type, owner, id, old, all, html):
             env = Environment(
                 loader=FileSystemLoader(templates), autoescape=select_autoescape()
             )
+            # split lists into current and finished
             [jam_list_current, jam_list_finished] = [[], []]
             for jam in jam_list:
                 if jam.start + timedelta(days=jam.duration) > datetime.now():
@@ -158,7 +159,7 @@ def list(templates, type, owner, id, old, all, html):
                 with open("output/index.html", "w") as static_file:
                     static_file.write(rendered_template)
             if old:
-                items_per_page = 50
+                items_per_page = 50  # TODO: make this configurable
 
                 pages = ceil(len(jam_list_finished) / items_per_page)
 
@@ -167,6 +168,7 @@ def list(templates, type, owner, id, old, all, html):
                     end = start + items_per_page
                     page_data = jam_list_finished[start:end]
 
+                    # Render the template for this page
                     template = env.get_template("index-finished.html.jinja")
 
                     rendered_template = template.render(
@@ -176,6 +178,7 @@ def list(templates, type, owner, id, old, all, html):
                         date=datetime.now(),
                     )
 
+                    # Save the rendered template to a file
                     with open(f"output/index-finished-{page}.html", "w") as static_file:
                         static_file.write(rendered_template)
         else:

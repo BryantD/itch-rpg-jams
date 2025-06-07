@@ -125,6 +125,7 @@ class ItchJam:
                 "a", href=re.compile(r"\.itch\.io$")
             ):
                 owner_name = a_tag.get_text()
+                # slurped out of the center of the URL
                 owner_id = a_tag["href"][8:-8]
                 owners[owner_id] = owner_name
             self.owners = owners
@@ -147,6 +148,7 @@ class ItchJam:
         with open("keywords.toml", "rb") as f:
             keywords = tomllib.load(f)
 
+        # Preserve existing classification from DB if present
         row = self.db_conn.execute(
             "SELECT gametype FROM itch_jams WHERE jam_id = ?", (self.id,)
         ).fetchone()
@@ -154,6 +156,7 @@ class ItchJam:
             self.gametype = GameType(row[0])
             return self.gametype
 
+        # Auto-detect based on keywords
         desc_lower = (self.description or "").lower()
         name_lower = (self.name or "").lower()
         if any(word in desc_lower for word in keywords.get("tabletop_keywords", [])):
@@ -169,6 +172,7 @@ class ItchJam:
 
     def save(self):
         cur = self.db_conn.cursor()
+        # Upsert main jam record
         cur.execute(
             """
             INSERT INTO itch_jams (
@@ -195,6 +199,7 @@ class ItchJam:
                 self.description,
             ),
         )
+        # Replace owners for this jam
         cur.execute("DELETE FROM jam_owners WHERE jam_id = ?", (self.id,))
         for owner_id, owner_name in (self.owners or {}).items():
             cur.execute(
@@ -209,6 +214,7 @@ class ItchJam:
         self.crawled = True
 
     def load(self, id):
+        # Load jam record from normalized tables
         row = self.db_conn.execute(
             """
             SELECT jam_id, name, start_ts, duration, gametype, hashtag, description
@@ -228,6 +234,7 @@ class ItchJam:
             ) = row
             self.start = datetime.utcfromtimestamp(start_ts)
             self.gametype = gametype_val
+            # Load owners
             owners_rows = self.db_conn.execute(
                 """
                 SELECT o.owner_id, o.name
@@ -315,6 +322,7 @@ class ItchJamList:
         gametype=None,
         jam_id=None,
     ):
+        # Build base query of jam_ids
         if owner_id:
             jam_search = self.db_conn.execute(
                 "SELECT jam_id FROM jam_owners WHERE owner_id = ?", (owner_id,)
