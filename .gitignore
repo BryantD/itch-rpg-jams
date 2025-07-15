@@ -13,3 +13,7 @@ itch_jam.toml
 .vscode/settings.json
 digital-game-jam-name-keywords
 output/
+.python-version
+llm/
+itch-jam-cron.sh
+uv.lock

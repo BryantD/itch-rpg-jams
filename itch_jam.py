@@ -250,3 +250,7 @@ def delete(id):
             jam.delete()
         else:
             print(f"{id} not found")
+
+if __name__ == "__main__":
+    itch_jam()
+
